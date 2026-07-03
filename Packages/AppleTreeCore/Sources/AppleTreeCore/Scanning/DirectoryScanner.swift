@@ -185,7 +185,8 @@ public actor DirectoryScanner {
                         name: name,
                         isDirectory: false,
                         logicalSize: countThisFile ? size : 0,
-                        allocatedSize: countThisFile ? allocated : 0
+                        allocatedSize: countThisFile ? allocated : 0,
+                        category: FileCategorizer.category(forFileName: name)
                     )
                     currentParent.addChild(fileNode)
 
