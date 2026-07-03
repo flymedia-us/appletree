@@ -3,13 +3,18 @@ import Testing
 
 @Suite("FileNode")
 struct FileNodeTests {
-    @Test("finalizeAsDirectory sums sizes and counts from children, sorted descending")
+    @Test("finalizeAsDirectory sums sizes and counts from children, sorted descending by displaySize (allocatedSize)")
     func finalizeAsDirectorySumsChildren() {
         let root = FileNode(name: "root", isDirectory: true)
 
-        let small = FileNode(name: "small.txt", isDirectory: false, logicalSize: 10, allocatedSize: 512)
-        let big = FileNode(name: "big.txt", isDirectory: false, logicalSize: 1000, allocatedSize: 1024)
-        let subdir = FileNode(name: "sub", isDirectory: true, logicalSize: 500, allocatedSize: 512, fileCount: 3, folderCount: 0)
+        // logicalSize and allocatedSize deliberately diverge (and their
+        // descending orders differ) so this test actually exercises that
+        // sorting/display is driven by displaySize (allocatedSize), not
+        // logicalSize — matching the product decision that on-disk
+        // footprint, not cloud-inflatable apparent size, drives the UI.
+        let small = FileNode(name: "small.txt", isDirectory: false, logicalSize: 10, allocatedSize: 300)
+        let big = FileNode(name: "big.txt", isDirectory: false, logicalSize: 1000, allocatedSize: 2000)
+        let subdir = FileNode(name: "sub", isDirectory: true, logicalSize: 500, allocatedSize: 900, fileCount: 3, folderCount: 0)
 
         root.addChild(small)
         root.addChild(big)
@@ -17,19 +22,19 @@ struct FileNodeTests {
         root.finalizeAsDirectory()
 
         #expect(root.logicalSize == 10 + 1000 + 500)
-        #expect(root.allocatedSize == 512 + 1024 + 512)
+        #expect(root.allocatedSize == 300 + 2000 + 900)
         #expect(root.fileCount == 2 + 3) // small + big directly, plus sub's 3 files
         #expect(root.folderCount == 1) // sub itself
-        #expect(root.children.map(\.name) == ["big.txt", "sub", "small.txt"]) // sorted descending by size
+        #expect(root.children.map(\.name) == ["big.txt", "sub", "small.txt"]) // sorted descending by allocatedSize: 2000, 900, 300
     }
 
-    @Test("fractionOfParent")
+    @Test("fractionOfParent is based on displaySize (allocatedSize), not logicalSize")
     func fractionOfParent() {
-        let root = FileNode(name: "root", isDirectory: true, logicalSize: 1000)
-        let child = FileNode(name: "child", isDirectory: false, logicalSize: 250)
+        let root = FileNode(name: "root", isDirectory: true, logicalSize: 999_000, allocatedSize: 1000)
+        let child = FileNode(name: "child", isDirectory: false, logicalSize: 1, allocatedSize: 250)
         root.addChild(child)
 
-        #expect(child.fractionOfParent == 0.25)
+        #expect(child.fractionOfParent == 0.25) // 250/1000, ignoring the wildly different logicalSize values
         #expect(root.fractionOfParent == 1.0) // no parent
     }
 

@@ -8,12 +8,22 @@ public struct TreemapNode: Sendable {
     public let rect: CGRect
     public let labelRect: CGRect?
     public let depth: Int
+    /// `true` once at least one descendant of a directory was itself laid
+    /// out (i.e. cleared `minBoxSize`). A directory with real content
+    /// (`source.logicalSize > 0`) but `hasVisibleChildren == false` means
+    /// every one of its children was individually too small to render on
+    /// its own — a folder full of many tiny files at this canvas size, not
+    /// an empty folder. The renderer uses this to distinguish "content too
+    /// fine-grained to show" from true empty space, rather than leaving an
+    /// unexplained blank hole.
+    public internal(set) var hasVisibleChildren: Bool
 
-    public init(source: FileNode, rect: CGRect, labelRect: CGRect?, depth: Int) {
+    public init(source: FileNode, rect: CGRect, labelRect: CGRect?, depth: Int, hasVisibleChildren: Bool = false) {
         self.source = source
         self.rect = rect
         self.labelRect = labelRect
         self.depth = depth
+        self.hasVisibleChildren = hasVisibleChildren
     }
 }
 

@@ -35,7 +35,7 @@ public final class FileNode: @unchecked Sendable {
     public internal(set) var folderCount: Int
 
     /// Empty for files. For directories, populated incrementally by the
-    /// scanner and sorted descending by `logicalSize` once the directory's
+    /// scanner and sorted descending by `displaySize` once the directory's
     /// scan completes (this ordering is relied on by both the Tree View's
     /// default sort and the treemap layout algorithm).
     public internal(set) var children: [FileNode]
@@ -77,11 +77,24 @@ public final class FileNode: @unchecked Sendable {
         return components.reversed().joined(separator: "/")
     }
 
-    /// Fraction of the parent's `logicalSize` this node occupies, in [0, 1].
+    /// The size that drives sorting, treemap area, and the Tree View's Size
+    /// column — `allocatedSize` (actual on-disk footprint), not
+    /// `logicalSize` (apparent/claimed size). This matters on modern macOS:
+    /// cloud-placeholder files (iCloud Optimized Storage, Google Drive's
+    /// File Provider integration) report their full cloud `st_size` while
+    /// occupying near-zero local blocks, which makes `logicalSize` alone
+    /// wildly overstate real disk usage — confirmed on a real machine where
+    /// a `du`-measured 3.3GB-on-disk Google Drive folder reported many times
+    /// that in claimed logical size. `allocatedSize` reflects what's
+    /// actually using local disk space, which is the whole point of a disk
+    /// usage analyzer.
+    public var displaySize: UInt64 { allocatedSize }
+
+    /// Fraction of the parent's `displaySize` this node occupies, in [0, 1].
     /// `1.0` for the root (no parent) or when the parent's size is zero.
     public var fractionOfParent: Double {
-        guard let parent, parent.logicalSize > 0 else { return 1.0 }
-        return Double(logicalSize) / Double(parent.logicalSize)
+        guard let parent, parent.displaySize > 0 else { return 1.0 }
+        return Double(displaySize) / Double(parent.displaySize)
     }
 }
 
@@ -106,10 +119,10 @@ extension FileNode {
     }
 
     /// Recomputes `logicalSize`/`allocatedSize`/`fileCount`/`folderCount` from
-    /// `children` and sorts `children` descending by `logicalSize`. Called
+    /// `children` and sorts `children` descending by `displaySize`. Called
     /// once a directory's immediate scan work is done.
     func finalizeAsDirectory() {
-        children.sort { $0.logicalSize > $1.logicalSize }
+        children.sort { $0.displaySize > $1.displaySize }
 
         var logical: UInt64 = 0
         var allocated: UInt64 = 0

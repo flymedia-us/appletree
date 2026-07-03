@@ -136,6 +136,30 @@ public actor DirectoryScanner {
                 case FTS_D:
                     if level == 0 { continue }
 
+                    // Directory-level dedup: macOS composes the visible
+                    // filesystem from multiple APFS volumes joined by
+                    // firmlinks (e.g. /Users is a firmlink into the same
+                    // underlying volume as /System/Volumes/Data/Users).
+                    // Firmlinked directories share device+inode with their
+                    // target but do NOT bump st_nlink the way a true
+                    // hardlink would, so unlike the file-level check below,
+                    // this one can't be gated on nlink > 1 — every directory
+                    // needs the check, or a whole-volume scan starting at
+                    // "/" double-counts the entire Data volume (confirmed
+                    // via a real scan: ~4TB counted twice, once under
+                    // /System and again under /Users et al). Skip both the
+                    // node creation and the descent for a repeat.
+                    if let statp = entp.pointee.fts_statp {
+                        let isFirstVisit = inodeTracker.markSeenReturningIsFirst(
+                            device: statp.pointee.st_dev,
+                            inode: UInt64(statp.pointee.st_ino)
+                        )
+                        if !isFirstVisit {
+                            fts_set(ftsp, entp, FTS_SKIP)
+                            continue
+                        }
+                    }
+
                     let fullPath = String(cString: entp.pointee.fts_path)
                     let name = (fullPath as NSString).lastPathComponent
                     let childNode = FileNode(name: name, isDirectory: true)

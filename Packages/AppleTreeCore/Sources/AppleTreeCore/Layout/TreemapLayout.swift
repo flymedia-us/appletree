@@ -45,6 +45,7 @@ public enum TreemapLayout {
             ? CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: options.labelStripHeight)
             : nil
 
+        let nodeIndex = result.count
         result.append(TreemapNode(source: node, rect: rect, labelRect: labelRect, depth: depth))
 
         guard node.isDirectory, !node.children.isEmpty else { return }
@@ -54,14 +55,16 @@ public enum TreemapLayout {
             ? CGRect(x: rect.minX, y: rect.minY + options.labelStripHeight, width: rect.width, height: rect.height - options.labelStripHeight)
             : rect
 
+        let countBeforeChildren = result.count
         layoutChildren(
             node.children[...],
-            totalSize: node.logicalSize,
+            totalSize: node.displaySize,
             in: contentRect,
             depth: depth + 1,
             options: options,
             into: &result
         )
+        result[nodeIndex].hasVisibleChildren = result.count > countBeforeChildren
     }
 
     /// `children` must already be sorted descending by size (guaranteed by
@@ -86,7 +89,7 @@ public enum TreemapLayout {
         let splitIndex = splitPoint(for: children, totalSize: totalSize)
         let group1 = children[children.startIndex..<splitIndex]
         let group2 = children[splitIndex...]
-        let group1Size = group1.reduce(UInt64(0)) { $0 + $1.logicalSize }
+        let group1Size = group1.reduce(UInt64(0)) { $0 + $1.displaySize }
         let group2Size = totalSize - group1Size
         let ratio = CGFloat(Double(group1Size) / Double(totalSize))
 
@@ -117,7 +120,7 @@ public enum TreemapLayout {
         var cumulative: UInt64 = 0
 
         for index in children.indices {
-            let next = cumulative + children[index].logicalSize
+            let next = cumulative + children[index].displaySize
             if next >= half {
                 let distIncluding = next - half
                 let distExcluding = half - cumulative

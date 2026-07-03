@@ -13,7 +13,7 @@ struct TreemapLayoutTests {
 
     @Test("a single leaf file occupies exactly the given rect")
     func leafOccupiesGivenRect() {
-        let file = FileNode(name: "a.txt", isDirectory: false, logicalSize: 100)
+        let file = FileNode(name: "a.txt", isDirectory: false, logicalSize: 100, allocatedSize: 100)
         let rect = CGRect(x: 0, y: 0, width: 200, height: 200)
 
         let result = TreemapLayout.layout(node: file, in: rect)
@@ -25,7 +25,7 @@ struct TreemapLayoutTests {
 
     @Test("rect below minBoxSize produces no layout at all")
     func tinyRectProducesNothing() {
-        let file = FileNode(name: "a.txt", isDirectory: false, logicalSize: 100)
+        let file = FileNode(name: "a.txt", isDirectory: false, logicalSize: 100, allocatedSize: 100)
         let rect = CGRect(x: 0, y: 0, width: 1, height: 1)
 
         let result = TreemapLayout.layout(node: file, in: rect, options: TreemapLayoutOptions(minBoxSize: 2))
@@ -35,8 +35,8 @@ struct TreemapLayoutTests {
 
     @Test("two children split proportionally to their size along the longer axis")
     func twoChildrenSplitProportionally() {
-        let big = FileNode(name: "big", isDirectory: false, logicalSize: 700)
-        let small = FileNode(name: "small", isDirectory: false, logicalSize: 300)
+        let big = FileNode(name: "big", isDirectory: false, logicalSize: 700, allocatedSize: 700)
+        let small = FileNode(name: "small", isDirectory: false, logicalSize: 300, allocatedSize: 300)
         let root = makeDirectory(name: "root", children: [big, small])
 
         // Wide rect (width > height): split should be vertical (along X).
@@ -63,7 +63,7 @@ struct TreemapLayoutTests {
 
     @Test("label gating is strictly greater-than the configured thresholds")
     func labelGatingBoundary() {
-        let file = FileNode(name: "a.txt", isDirectory: false, logicalSize: 100)
+        let file = FileNode(name: "a.txt", isDirectory: false, logicalSize: 100, allocatedSize: 100)
         let options = TreemapLayoutOptions(labelMinWidth: 60, labelMinHeight: 14, labelStripHeight: 14)
 
         let atThreshold = TreemapLayout.layout(
@@ -85,7 +85,7 @@ struct TreemapLayoutTests {
 
     @Test("a directory's children are laid out inset below its reserved label strip")
     func childrenInsetBelowLabelStrip() {
-        let child = FileNode(name: "child", isDirectory: false, logicalSize: 100)
+        let child = FileNode(name: "child", isDirectory: false, logicalSize: 100, allocatedSize: 100)
         let root = makeDirectory(name: "root", children: [child])
         let rect = CGRect(x: 0, y: 0, width: 200, height: 200)
         let options = TreemapLayoutOptions(labelMinWidth: 60, labelMinHeight: 14, labelStripHeight: 14)
@@ -102,7 +102,7 @@ struct TreemapLayoutTests {
 
     @Test("a directory box too small for a label gives its children the full rect, no wasted inset")
     func tinyDirectoryGivesChildrenFullRect() {
-        let child = FileNode(name: "child", isDirectory: false, logicalSize: 100)
+        let child = FileNode(name: "child", isDirectory: false, logicalSize: 100, allocatedSize: 100)
         let root = makeDirectory(name: "root", children: [child])
         let rect = CGRect(x: 0, y: 0, width: 10, height: 10) // below label thresholds, above minBoxSize
         let options = TreemapLayoutOptions(minBoxSize: 2, labelMinWidth: 60, labelMinHeight: 14, labelStripHeight: 14)
@@ -118,9 +118,9 @@ struct TreemapLayoutTests {
 
     @Test("layout is a pure function: identical inputs produce identical output")
     func layoutIsDeterministic() {
-        let a = FileNode(name: "a", isDirectory: false, logicalSize: 500)
-        let b = FileNode(name: "b", isDirectory: false, logicalSize: 300)
-        let c = FileNode(name: "c", isDirectory: false, logicalSize: 200)
+        let a = FileNode(name: "a", isDirectory: false, logicalSize: 500, allocatedSize: 500)
+        let b = FileNode(name: "b", isDirectory: false, logicalSize: 300, allocatedSize: 300)
+        let c = FileNode(name: "c", isDirectory: false, logicalSize: 200, allocatedSize: 200)
         let root = makeDirectory(name: "root", children: [a, b, c])
         let rect = CGRect(x: 0, y: 0, width: 400, height: 300)
 
@@ -131,9 +131,39 @@ struct TreemapLayoutTests {
         #expect(first.map(\.depth) == second.map(\.depth))
     }
 
+    @Test("a directory whose children are all individually sub-pixel is flagged hasVisibleChildren=false, not silently empty")
+    func manyTinyChildrenFlagsNoVisibleChildren() {
+        // 500 tiny files sharing a small rect: each child's slice is far
+        // below minBoxSize, so none should be individually laid out, but
+        // the directory itself must still report it has real (dropped)
+        // content rather than looking indistinguishable from an empty dir.
+        let tinyFiles = (0..<500).map { FileNode(name: "f\($0)", isDirectory: false, logicalSize: 10, allocatedSize: 10) }
+        let root = makeDirectory(name: "root", children: tinyFiles)
+        let rect = CGRect(x: 0, y: 0, width: 50, height: 50)
+
+        let result = TreemapLayout.layout(node: root, in: rect, options: TreemapLayoutOptions(minBoxSize: 2))
+
+        #expect(result.count == 1) // only the directory itself, no visible children
+        #expect(result[0].source === root)
+        #expect(result[0].hasVisibleChildren == false)
+        #expect(root.logicalSize == 5000) // confirms the dropped content was real, not actually empty
+    }
+
+    @Test("a directory whose children DO render is flagged hasVisibleChildren=true")
+    func visibleChildrenFlagsTrue() {
+        let child = FileNode(name: "child", isDirectory: false, logicalSize: 100, allocatedSize: 100)
+        let root = makeDirectory(name: "root", children: [child])
+        let rect = CGRect(x: 0, y: 0, width: 200, height: 200)
+
+        let result = TreemapLayout.layout(node: root, in: rect)
+
+        let rootNode = result.first { $0.source === root }!
+        #expect(rootNode.hasVisibleChildren)
+    }
+
     @Test("respects maxDepth by stopping recursion without dropping the boundary node itself")
     func respectsMaxDepth() {
-        let leaf = FileNode(name: "leaf", isDirectory: false, logicalSize: 100)
+        let leaf = FileNode(name: "leaf", isDirectory: false, logicalSize: 100, allocatedSize: 100)
         let mid = makeDirectory(name: "mid", children: [leaf])
         let root = makeDirectory(name: "root", children: [mid])
         let rect = CGRect(x: 0, y: 0, width: 200, height: 200)

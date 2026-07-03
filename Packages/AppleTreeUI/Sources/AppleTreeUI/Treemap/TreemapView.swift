@@ -74,6 +74,14 @@ public struct TreemapView: View {
 
             if !node.source.isDirectory {
                 context.fill(Path(rect), with: .color(node.source.category.swiftUIColor))
+            } else if node.source.displaySize > 0, !node.hasVisibleChildren {
+                // This directory has real content, but every child was
+                // individually too small to render on its own (a folder of
+                // many tiny files at this canvas size) — a flat neutral
+                // tint distinguishes "content too fine-grained to show
+                // individually" from true empty space, instead of leaving
+                // an unexplained blank hole.
+                context.fill(Path(rect), with: .color(.gray.opacity(0.12)))
             }
 
             context.stroke(Path(rect), with: .color(.black.opacity(0.25)), lineWidth: 0.5)
@@ -86,10 +94,14 @@ public struct TreemapView: View {
             }
 
             if let labelRect = node.labelRect {
-                let label = "\(node.source.name)  (\(SizeFormatting.string(for: node.source.logicalSize)))"
+                let label = "\(node.source.name)  (\(SizeFormatting.string(for: node.source.displaySize)))"
                 let text = Text(label)
                     .font(.system(size: 10))
-                    .foregroundColor(.white)
+                    // Directory boxes are unfilled (or only faintly tinted) —
+                    // white text there would be invisible against the
+                    // light canvas background. File boxes are filled with a
+                    // saturated category color, where white reads clearly.
+                    .foregroundColor(node.source.isDirectory ? .black : .white)
                 context.draw(
                     text,
                     in: CGRect(x: labelRect.minX + 4, y: labelRect.minY, width: max(0, labelRect.width - 6), height: labelRect.height)

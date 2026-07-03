@@ -34,7 +34,7 @@ struct ContentView: View {
                 Spacer()
                 Button("Cancel", action: appState.cancelScan)
             } else if let root = appState.rootNode {
-                Text("\(root.path) — \(SizeFormatting.string(for: root.logicalSize)), \(root.fileCount) files")
+                Text("\(root.path) — \(SizeFormatting.string(for: root.displaySize)), \(root.fileCount) files")
                     .foregroundStyle(.secondary)
                     .font(.callout)
                     .lineLimit(1)

@@ -10,16 +10,19 @@ struct InodeKey: Hashable, Sendable {
 
 /// Tracks which (device, inode) pairs have already been counted during a
 /// scan, so hardlinked files and APFS clones sharing the same underlying data
-/// aren't double-counted toward total size.
+/// aren't double-counted toward total size. Also used for directories — not
+/// for hardlink dedup (APFS doesn't support directory hardlinks), but
+/// because macOS composes the visible filesystem from multiple volumes
+/// joined by firmlinks (e.g. `/Users` and `/System/Volumes/Data/Users` are
+/// the same underlying directory reachable two ways); without this check a
+/// whole-volume scan starting at `/` double-counts everything on the Data
+/// volume.
 ///
 /// Backed by `OSAllocatedUnfairLock`, not an actor: this is called from deep
 /// inside the hot per-file traversal loop across many concurrent worker
 /// tasks, and a plain uncontended-fast-path mutex is dramatically cheaper
 /// there than an actor hop (which pulls in Swift concurrency's task
-/// scheduling machinery for every call). Directories are intentionally
-/// never passed here — APFS doesn't support directory hardlinks, and
-/// per-child link-count bookkeeping on directories is a known false-positive
-/// source.
+/// scheduling machinery for every call).
 final class InodeTracker: @unchecked Sendable {
     private let lock = OSAllocatedUnfairLock(initialState: Set<InodeKey>())
 

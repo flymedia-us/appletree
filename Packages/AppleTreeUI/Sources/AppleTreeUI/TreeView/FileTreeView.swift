@@ -136,7 +136,7 @@ public struct FileTreeView: NSViewRepresentable {
                 return TextCellView.makeOrReuse(
                     in: outlineView,
                     identifier: .sizeColumn,
-                    text: SizeFormatting.string(for: node.logicalSize),
+                    text: SizeFormatting.string(for: node.displaySize),
                     alignment: .right
                 )
             default:
