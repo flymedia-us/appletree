@@ -39,7 +39,8 @@ public struct FileTreeView: NSViewRepresentable {
         let folderColumn = NSTableColumn(identifier: .folderColumn)
         folderColumn.title = "Folder"
         folderColumn.minWidth = 160
-        folderColumn.width = 320
+        folderColumn.width = 260
+        folderColumn.sortDescriptorPrototype = NSSortDescriptor(key: SortKey.name.rawValue, ascending: true)
         outlineView.addTableColumn(folderColumn)
         outlineView.outlineTableColumn = folderColumn
 
@@ -48,13 +49,36 @@ public struct FileTreeView: NSViewRepresentable {
         percentColumn.minWidth = 130
         percentColumn.width = 150
         percentColumn.maxWidth = 180
+        percentColumn.sortDescriptorPrototype = NSSortDescriptor(key: SortKey.percentOfParent.rawValue, ascending: false)
         outlineView.addTableColumn(percentColumn)
 
         let sizeColumn = NSTableColumn(identifier: .sizeColumn)
         sizeColumn.title = "Size"
         sizeColumn.minWidth = 70
         sizeColumn.width = 90
+        sizeColumn.sortDescriptorPrototype = NSSortDescriptor(key: SortKey.size.rawValue, ascending: false)
         outlineView.addTableColumn(sizeColumn)
+
+        let logicalSizeColumn = NSTableColumn(identifier: .logicalSizeColumn)
+        logicalSizeColumn.title = "Logical Size"
+        logicalSizeColumn.minWidth = 80
+        logicalSizeColumn.width = 100
+        logicalSizeColumn.sortDescriptorPrototype = NSSortDescriptor(key: SortKey.logicalSize.rawValue, ascending: false)
+        outlineView.addTableColumn(logicalSizeColumn)
+
+        let filesColumn = NSTableColumn(identifier: .filesColumn)
+        filesColumn.title = "Files"
+        filesColumn.minWidth = 60
+        filesColumn.width = 70
+        filesColumn.sortDescriptorPrototype = NSSortDescriptor(key: SortKey.files.rawValue, ascending: false)
+        outlineView.addTableColumn(filesColumn)
+
+        let foldersColumn = NSTableColumn(identifier: .foldersColumn)
+        foldersColumn.title = "Folders"
+        foldersColumn.minWidth = 60
+        foldersColumn.width = 70
+        foldersColumn.sortDescriptorPrototype = NSSortDescriptor(key: SortKey.folders.rawValue, ascending: false)
+        outlineView.addTableColumn(foldersColumn)
 
         let scrollView = NSScrollView()
         scrollView.documentView = outlineView
@@ -77,6 +101,7 @@ public struct FileTreeView: NSViewRepresentable {
 
         if isNewRoot || coordinator.lastTreeVersion != treeVersion {
             coordinator.lastTreeVersion = treeVersion
+            coordinator.invalidateSortCache()
             // A full reload is the simplest correct behavior for v1; targeted
             // reloadItem calls are a fast-follow if this proves too slow on
             // very large in-progress scans.
@@ -93,6 +118,14 @@ public struct FileTreeView: NSViewRepresentable {
         Coordinator(selection: selection)
     }
 
+    /// Which field drives the outline's current sort. `nil` means the
+    /// natural scan order (children pre-sorted descending by `displaySize`
+    /// in `FileNode.finalizeAsDirectory`) — the default, matching the
+    /// treemap's own ordering.
+    enum SortKey: String {
+        case name, percentOfParent, size, logicalSize, files, folders
+    }
+
     @MainActor
     public final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
         var rootNode: FileNode?
@@ -100,6 +133,10 @@ public struct FileTreeView: NSViewRepresentable {
         weak var outlineView: NSOutlineView?
         let selection: SelectionModel
         private var isSyncingSelection = false
+
+        private var sortKey: SortKey?
+        private var sortAscending = false
+        private var sortedChildrenCache: [ObjectIdentifier: [FileNode]] = [:]
 
         init(selection: SelectionModel) {
             self.selection = selection
@@ -114,12 +151,23 @@ public struct FileTreeView: NSViewRepresentable {
 
         public func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
             let node = (item as? FileNode) ?? rootNode
-            return node?.children[index] as Any
+            return node.map { sortedChildren(of: $0)[index] } as Any
         }
 
         public func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
             guard let node = item as? FileNode else { return false }
             return node.isDirectory && !node.children.isEmpty
+        }
+
+        public func outlineView(_ outlineView: NSOutlineView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
+            if let descriptor = outlineView.sortDescriptors.first, let key = descriptor.key.flatMap(SortKey.init) {
+                sortKey = key
+                sortAscending = descriptor.ascending
+            } else {
+                sortKey = nil
+            }
+            invalidateSortCache()
+            outlineView.reloadData()
         }
 
         // MARK: NSOutlineViewDelegate
@@ -139,6 +187,27 @@ public struct FileTreeView: NSViewRepresentable {
                     text: SizeFormatting.string(for: node.displaySize),
                     alignment: .right
                 )
+            case .logicalSizeColumn:
+                return TextCellView.makeOrReuse(
+                    in: outlineView,
+                    identifier: .logicalSizeColumn,
+                    text: SizeFormatting.string(for: node.logicalSize),
+                    alignment: .right
+                )
+            case .filesColumn:
+                return TextCellView.makeOrReuse(
+                    in: outlineView,
+                    identifier: .filesColumn,
+                    text: "\(node.fileCount)",
+                    alignment: .right
+                )
+            case .foldersColumn:
+                return TextCellView.makeOrReuse(
+                    in: outlineView,
+                    identifier: .foldersColumn,
+                    text: "\(node.folderCount)",
+                    alignment: .right
+                )
             default:
                 return nil
             }
@@ -149,6 +218,52 @@ public struct FileTreeView: NSViewRepresentable {
             let row = outlineView.selectedRow
             let node = row >= 0 ? outlineView.item(atRow: row) as? FileNode : nil
             selection.selectedNodeID = node?.id
+        }
+
+        // MARK: Sorting
+
+        func invalidateSortCache() {
+            sortedChildrenCache.removeAll()
+        }
+
+        /// `node.children` in the outline's current display order: the
+        /// natural (displaySize-descending) scan order by default, or a
+        /// column-driven sort once the user has clicked a header. Memoized
+        /// per node for the lifetime of the current sort/tree generation —
+        /// `NSOutlineView` queries `child:ofItem:` once per row, and
+        /// re-sorting a large sibling array on every single index query
+        /// would be O(n² log n) over a full expansion.
+        private func sortedChildren(of node: FileNode) -> [FileNode] {
+            guard let sortKey else { return node.children }
+            if let cached = sortedChildrenCache[node.id] { return cached }
+
+            let ascending = sortAscending
+            let sorted = node.children.sorted { a, b in
+                let primary = Self.compare(a, b, key: sortKey)
+                if primary != .orderedSame {
+                    return ascending ? primary == .orderedAscending : primary == .orderedDescending
+                }
+                return a.name.localizedStandardCompare(b.name) == .orderedAscending
+            }
+            sortedChildrenCache[node.id] = sorted
+            return sorted
+        }
+
+        private static func compare(_ a: FileNode, _ b: FileNode, key: SortKey) -> ComparisonResult {
+            switch key {
+            case .name: return a.name.localizedStandardCompare(b.name)
+            case .percentOfParent: return numericCompare(a.fractionOfParent, b.fractionOfParent)
+            case .size: return numericCompare(a.displaySize, b.displaySize)
+            case .logicalSize: return numericCompare(a.logicalSize, b.logicalSize)
+            case .files: return numericCompare(a.fileCount, b.fileCount)
+            case .folders: return numericCompare(a.folderCount, b.folderCount)
+            }
+        }
+
+        private static func numericCompare<T: Comparable>(_ a: T, _ b: T) -> ComparisonResult {
+            if a < b { return .orderedAscending }
+            if a > b { return .orderedDescending }
+            return .orderedSame
         }
 
         // MARK: Selection sync (treemap -> tree)
@@ -195,4 +310,7 @@ private extension NSUserInterfaceItemIdentifier {
     static let folderColumn = NSUserInterfaceItemIdentifier("folder")
     static let percentColumn = NSUserInterfaceItemIdentifier("percentOfParent")
     static let sizeColumn = NSUserInterfaceItemIdentifier("size")
+    static let logicalSizeColumn = NSUserInterfaceItemIdentifier("logicalSize")
+    static let filesColumn = NSUserInterfaceItemIdentifier("files")
+    static let foldersColumn = NSUserInterfaceItemIdentifier("folders")
 }
