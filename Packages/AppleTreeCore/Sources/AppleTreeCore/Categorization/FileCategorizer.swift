@@ -6,6 +6,14 @@ public enum FileCategorizer {
         return ExtensionCategoryMap.table[ext] ?? .other
     }
 
+    /// The lowercased extension (without the leading dot), or `nil` for an
+    /// extensionless name. Exposed publicly so presentation layers can build
+    /// finer-grained groupings (e.g. per-extension treemap colors) than the
+    /// coarse `FileCategory` buckets without duplicating the dot-parsing rules.
+    public static func fileExtension(forFileName name: String) -> String? {
+        extractExtension(from: name)
+    }
+
     /// The substring after the *last* dot, lowercased — but only when that
     /// dot is neither the first character (a dotfile like `.gitignore` has
     /// no extension, it's not an extension literally named "gitignore") nor

@@ -14,6 +14,8 @@ public struct TreemapView: View {
     @State private var layoutSize: CGSize = .zero
     @State private var layoutedRootID: FileNode.ID?
     @State private var layoutedVersion: Int = -1
+    @State private var hoveredFolder: FileNode?
+    @State private var hoverPoint: CGPoint = .zero
 
     public init(rootNode: FileNode?, selection: SelectionModel, treeVersion: Int) {
         self.rootNode = rootNode
@@ -38,13 +40,48 @@ public struct TreemapView: View {
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let location):
-                    selection.hoveredNodeID = TreemapHitTester.hitTest(location, in: layout)?.id
+                    let folder = TreemapHitTester.hitTestFolderLabel(location, in: layout)
+                    hoveredFolder = folder
+                    hoverPoint = location
+                    selection.hoveredNodeID = folder?.id
                 case .ended:
+                    hoveredFolder = nil
                     selection.hoveredNodeID = nil
                 }
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(Self.backgroundColor)
+            .overlay(alignment: .topLeading) {
+                if let hoveredFolder {
+                    FolderHoverTooltip(node: hoveredFolder)
+                        .fixedSize()
+                        .offset(tooltipOffset(in: proxy.size))
+                        .allowsHitTesting(false)
+                }
+            }
         }
+    }
+
+    /// Dark neutral background the colored file boxes and folder label bands
+    /// sit on top of — matches the reference treemap styling (#3A3939).
+    private static let backgroundColor = Color(red: 0x3A / 255.0, green: 0x39 / 255.0, blue: 0x39 / 255.0)
+    private static let folderLabelBackground = Color(red: 0x50 / 255.0, green: 0x4F / 255.0, blue: 0x4F / 255.0)
+    private static let folderStroke = Color.white.opacity(0.18)
+    private static let selectedOutline = Color.white
+    private static let hoveredOutline = Color.white.opacity(0.5)
+
+    /// Keeps the tooltip from running off the far edge of the canvas by
+    /// flipping which side of the cursor it renders on, using a rough
+    /// estimate of the tooltip's own footprint (its real size isn't known
+    /// until SwiftUI lays it out).
+    private func tooltipOffset(in containerSize: CGSize) -> CGSize {
+        let estimatedWidth: CGFloat = 260
+        let estimatedHeight: CGFloat = 40
+        let margin: CGFloat = 14
+        let flipX = hoverPoint.x + margin + estimatedWidth > containerSize.width
+        let flipY = hoverPoint.y + margin + estimatedHeight > containerSize.height
+        let x = flipX ? hoverPoint.x - margin - estimatedWidth : hoverPoint.x + margin
+        let y = flipY ? hoverPoint.y - margin - estimatedHeight : hoverPoint.y + margin
+        return CGSize(width: x, height: y)
     }
 
     private func relayout(size: CGSize) {
@@ -67,13 +104,28 @@ public struct TreemapView: View {
     private func draw(in context: inout GraphicsContext) {
         let selectedID = selection.selectedNodeID
         let hoveredID = selection.hoveredNodeID
+        // A selected/hovered folder's box is behind its own children's boxes
+        // and label bands in draw order (they're nested inside it), so its
+        // outline has to be drawn in a final pass over everything else —
+        // drawn inline, a child painted right up to the parent's edge would
+        // paint over the outline there.
+        var hoveredRect: CGRect?
+        var selectedRect: CGRect?
 
         for node in layout {
             let rect = node.rect
             guard rect.width >= 1, rect.height >= 1 else { continue }
 
             if !node.source.isDirectory {
-                context.fill(Path(rect), with: .color(node.source.category.swiftUIColor))
+                let (top, bottom) = ExtensionColor.gradient(forFileName: node.source.name)
+                context.fill(
+                    Path(rect),
+                    with: .linearGradient(
+                        Gradient(colors: [top, bottom]),
+                        startPoint: CGPoint(x: rect.midX, y: rect.minY),
+                        endPoint: CGPoint(x: rect.midX, y: rect.maxY)
+                    )
+                )
             } else if node.source.displaySize > 0, !node.hasVisibleChildren {
                 // This directory has real content, but every child was
                 // individually too small to render on its own (a folder of
@@ -81,38 +133,68 @@ public struct TreemapView: View {
                 // tint distinguishes "content too fine-grained to show
                 // individually" from true empty space, instead of leaving
                 // an unexplained blank hole.
-                context.fill(Path(rect), with: .color(.gray.opacity(0.12)))
+                context.fill(Path(rect), with: .color(.white.opacity(0.06)))
             }
 
-            context.stroke(Path(rect), with: .color(.black.opacity(0.25)), lineWidth: 0.5)
+            context.stroke(Path(rect), with: .color(Self.folderStroke), lineWidth: 0.5)
 
             if node.source.id == hoveredID {
-                context.fill(Path(rect), with: .color(.white.opacity(0.15)))
+                hoveredRect = rect
             }
             if node.source.id == selectedID {
-                context.stroke(Path(rect.insetBy(dx: 1, dy: 1)), with: .color(.white), lineWidth: 2)
+                selectedRect = rect
             }
 
-            if let labelRect = node.labelRect {
+            // Only folders get a name label — labeling every individual file
+            // box would be illegible noise at the box counts a real
+            // directory tree produces.
+            if node.source.isDirectory, let labelRect = node.labelRect {
+                context.fill(Path(labelRect), with: .color(Self.folderLabelBackground))
+
                 let label = "\(node.source.name)  (\(SizeFormatting.string(for: node.source.displaySize)))"
                 let text = Text(label)
                     .font(.system(size: 10))
-                    // Directory boxes are unfilled (or only faintly tinted) —
-                    // white text there would be invisible against the
-                    // light canvas background. File boxes are filled with a
-                    // saturated category color, where white reads clearly.
-                    .foregroundColor(node.source.isDirectory ? .black : .white)
+                    .foregroundColor(.white.opacity(0.92))
                 context.draw(
                     text,
                     in: CGRect(x: labelRect.minX + 4, y: labelRect.minY, width: max(0, labelRect.width - 6), height: labelRect.height)
                 )
             }
         }
+
+        // Hover drawn first, subtler; selection drawn last/on top so a
+        // simultaneously selected+hovered folder still reads as selected.
+        if let hoveredRect {
+            context.stroke(Path(hoveredRect.insetBy(dx: 1, dy: 1)), with: .color(Self.hoveredOutline), lineWidth: 1.5)
+        }
+        if let selectedRect {
+            context.stroke(Path(selectedRect.insetBy(dx: 1, dy: 1)), with: .color(Self.selectedOutline), lineWidth: 2)
+        }
     }
 }
 
-extension FileCategory {
-    var swiftUIColor: Color {
-        Color(red: color.red, green: color.green, blue: color.blue)
+/// Small path+size callout that follows the cursor while hovering a folder's
+/// name in the treemap.
+private struct FolderHoverTooltip: View {
+    let node: FileNode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(node.path)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text(SizeFormatting.string(for: node.displaySize))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.black.opacity(0.85))
+        )
+        .frame(maxWidth: 320, alignment: .leading)
     }
 }
