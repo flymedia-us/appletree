@@ -9,9 +9,14 @@ struct ContentView: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
-            FileTreeView(rootNode: appState.rootNode, selection: appState.selection, treeVersion: appState.scanGeneration)
+            VSplitView {
+                FileTreeView(rootNode: appState.rootNode, selection: appState.selection, treeVersion: appState.scanGeneration)
+                    .frame(minHeight: 180)
+                TreemapView(rootNode: appState.rootNode, selection: appState.selection, treeVersion: appState.scanGeneration)
+                    .frame(minHeight: 180)
+            }
         }
-        .frame(minWidth: 640, minHeight: 420)
+        .frame(minWidth: 800, minHeight: 480)
     }
 
     private var toolbar: some View {
