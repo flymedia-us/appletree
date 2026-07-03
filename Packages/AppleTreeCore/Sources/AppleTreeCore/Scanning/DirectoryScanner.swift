@@ -176,7 +176,9 @@ public actor DirectoryScanner {
                                 continuation: continuation
                             )
                             childNode.finalizeAsDirectory()
-                            continuation.yield(.subtreeCompleted(parent: childNode))
+                            if counters.shouldEmitSubtreeCompleted() {
+                                continuation.yield(.subtreeCompleted(parent: childNode))
+                            }
                             slots.release()
                         }
                         fts_set(ftsp, entp, FTS_SKIP)
@@ -188,7 +190,9 @@ public actor DirectoryScanner {
                     if level == 0 { continue }
                     guard let finished = stack.popLast() else { continue }
                     finished.finalizeAsDirectory()
-                    continuation.yield(.subtreeCompleted(parent: finished))
+                    if counters.shouldEmitSubtreeCompleted() {
+                        continuation.yield(.subtreeCompleted(parent: finished))
+                    }
 
                 case FTS_F, FTS_DEFAULT, FTS_SL, FTS_SLNONE:
                     guard let statp = entp.pointee.fts_statp else { continue }

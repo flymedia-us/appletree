@@ -23,6 +23,7 @@ final class ScanCounters: @unchecked Sendable {
         var bytesScanned: UInt64 = 0
         var foldersSkipped = 0
         var lastProgressEmit: ContinuousClock.Instant = .now
+        var lastSubtreeCompletedEmit: ContinuousClock.Instant = .now
     }
 
     private let lock = OSAllocatedUnfairLock(initialState: State())
@@ -56,6 +57,24 @@ final class ScanCounters: @unchecked Sendable {
 
     func addFolderSkipped() {
         lock.withLock { state in state.foldersSkipped += 1 }
+    }
+
+    /// Whether enough wall-clock time has passed to emit another
+    /// `.subtreeCompleted` UI-refresh hint. The scanner mutates `FileNode`
+    /// directly through shared references regardless of this event — it
+    /// exists only to prompt a re-render — so at scan sizes with hundreds of
+    /// thousands of directories, emitting (and having the main actor consume)
+    /// one per directory floods the UI thread for no visible benefit between
+    /// frames. Bounding the rate here, at the source, is far cheaper than
+    /// throttling after the fact once every event has already paid for a
+    /// stream yield and a main-actor hop.
+    func shouldEmitSubtreeCompleted() -> Bool {
+        lock.withLock { state in
+            let now = ContinuousClock.now
+            guard now - state.lastSubtreeCompletedEmit > .milliseconds(50) else { return false }
+            state.lastSubtreeCompletedEmit = now
+            return true
+        }
     }
 
     func snapshot() -> Snapshot {

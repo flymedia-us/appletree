@@ -16,6 +16,7 @@ public struct TreemapView: View {
     @State private var layoutedVersion: Int = -1
     @State private var hoveredFolder: FileNode?
     @State private var hoverPoint: CGPoint = .zero
+    @State private var relayoutTask: Task<Void, Never>?
 
     public init(rootNode: FileNode?, selection: SelectionModel, treeVersion: Int) {
         self.rootNode = rootNode
@@ -86,6 +87,7 @@ public struct TreemapView: View {
 
     private func relayout(size: CGSize) {
         guard let rootNode, size.width > 0, size.height > 0 else {
+            relayoutTask?.cancel()
             layout = []
             return
         }
@@ -98,7 +100,25 @@ public struct TreemapView: View {
         layoutedRootID = rootNode.id
         layoutedVersion = treeVersion
         layoutSize = size
-        layout = TreemapLayout.layout(node: rootNode, in: CGRect(origin: .zero, size: size))
+
+        // A live window-resize drag can fire this several times a second,
+        // and a real scan's tree is large enough that recomputing its whole
+        // layout synchronously on every one of those was what made resizing
+        // "comically slow" — it blocked the same main thread driving the
+        // resize's own tracking loop. Debouncing collapses a fast flurry
+        // into one relayout of the final size, and running that one on a
+        // detached task keeps even it off the main thread; only the final
+        // `self.layout = computed` assignment hops back.
+        relayoutTask?.cancel()
+        relayoutTask = Task {
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+            let computed = await Task.detached(priority: .userInitiated) {
+                TreemapLayout.layout(node: rootNode, in: CGRect(origin: .zero, size: size))
+            }.value
+            guard !Task.isCancelled else { return }
+            self.layout = computed
+        }
     }
 
     private func draw(in context: inout GraphicsContext) {

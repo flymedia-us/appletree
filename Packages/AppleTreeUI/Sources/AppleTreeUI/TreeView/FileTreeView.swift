@@ -102,12 +102,26 @@ public struct FileTreeView: NSViewRepresentable {
         if isNewRoot || coordinator.lastTreeVersion != treeVersion {
             coordinator.lastTreeVersion = treeVersion
             coordinator.invalidateSortCache()
-            // A full reload is the simplest correct behavior for v1; targeted
-            // reloadItem calls are a fast-follow if this proves too slow on
-            // very large in-progress scans.
-            outlineView.reloadData()
-            if isNewRoot, let rootNode {
-                outlineView.expandItem(rootNode)
+            if isNewRoot {
+                // A brand new tree invalidates row/parent-child bookkeeping
+                // wholesale, so a full reload is the only correct option here.
+                outlineView.reloadData()
+                if let rootNode {
+                    outlineView.expandItem(rootNode)
+                }
+            } else if let rootNode {
+                // An in-progress scan bumps `treeVersion` roughly every
+                // 100ms; `reloadData()` on every one of those was disruptive
+                // enough (a live scan of a large tree fires this dozens of
+                // times) to interfere with the user's own disclosure-triangle
+                // clicks. `reloadItem(reloadChildren:)` targets just the
+                // subtree that changed and, per AppKit's documented behavior,
+                // preserves each item's expansion/selection state by
+                // identity — `FileNode` instances are mutated in place and
+                // never recreated, so identity is stable across reloads.
+                outlineView.reloadItem(rootNode, reloadChildren: true)
+            } else {
+                outlineView.reloadData()
             }
         }
 
