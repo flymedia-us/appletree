@@ -1,5 +1,6 @@
 import AppKit
 import AppleTreeCore
+import QuickLookUI
 import SwiftUI
 
 /// WizTree-style Tree View: an expandable, multi-column outline of the scan
@@ -35,6 +36,9 @@ public struct FileTreeView: NSViewRepresentable {
         let outlineView = DeletingOutlineView()
         outlineView.onDeleteShortcut = { [weak coordinator = context.coordinator] in
             coordinator?.deleteSelectedItem()
+        }
+        outlineView.onSpacebarPressed = { [weak coordinator = context.coordinator] in
+            coordinator?.togglePreviewPanel()
         }
         outlineView.dataSource = context.coordinator
         outlineView.delegate = context.coordinator
@@ -190,7 +194,14 @@ public struct FileTreeView: NSViewRepresentable {
     }
 
     @MainActor
-    public final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
+    // `@preconcurrency` on the QuickLook conformances: `QLPreviewPanelDataSource`/
+    // `QLPreviewPanelDelegate` are old Objective-C protocols imported without
+    // actor isolation, so adopting them on this `@MainActor` class is flagged
+    // as a potential data race under strict concurrency — this is the
+    // documented escape hatch for that exact "isolated class adopting a
+    // legacy unisolated protocol" situation.
+    public final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate,
+        @preconcurrency QLPreviewPanelDataSource, @preconcurrency QLPreviewPanelDelegate {
         var rootNode: FileNode?
         var lastTreeVersion = -1
         var lastIsScanning = false
@@ -305,6 +316,13 @@ public struct FileTreeView: NSViewRepresentable {
             let row = outlineView.selectedRow
             let node = row >= 0 ? outlineView.item(atRow: row) as? FileNode : nil
             selection.selectedNodeID = node?.id
+
+            // Mirrors Finder: while Quick Look is open, arrowing to a new
+            // selection updates the preview in place rather than requiring
+            // the user to close and reopen it.
+            if QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(), panel.isVisible {
+                panel.reloadData()
+            }
         }
 
         // MARK: Double-click (open file / toggle folder)
@@ -321,6 +339,46 @@ public struct FileTreeView: NSViewRepresentable {
             } else {
                 NSWorkspace.shared.open(URL(fileURLWithPath: node.path))
             }
+        }
+
+        // MARK: Quick Look (Space bar)
+
+        /// Toggles the shared Quick Look panel for the current selection, the
+        /// same Space-bar behavior Finder's list view has. `QLPreviewPanel`
+        /// normally finds its controller by searching the responder chain,
+        /// but since we drive it directly from our own key-event handling
+        /// rather than the standard `toggleQuickLookPanel:` action message,
+        /// wiring `dataSource`/`delegate` ourselves here is sufficient — no
+        /// need to also implement the `acceptsPreviewPanelControl` family.
+        func togglePreviewPanel() {
+            guard let outlineView, outlineView.selectedRow >= 0 else { return }
+            if QLPreviewPanel.sharedPreviewPanelExists(), let visiblePanel = QLPreviewPanel.shared(), visiblePanel.isVisible {
+                visiblePanel.orderOut(nil)
+                return
+            }
+            guard let panel = QLPreviewPanel.shared() else { return }
+            panel.dataSource = self
+            panel.delegate = self
+            panel.makeKeyAndOrderFront(nil)
+        }
+
+        public func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
+            guard let outlineView, outlineView.selectedRow >= 0 else { return 0 }
+            return 1
+        }
+
+        public func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! {
+            guard let outlineView, outlineView.selectedRow >= 0,
+                  let node = outlineView.item(atRow: outlineView.selectedRow) as? FileNode else { return nil }
+            return NSURL(fileURLWithPath: node.path)
+        }
+
+        /// Gives the panel a rect to zoom from/into (matching Finder's
+        /// animation) instead of a plain fade.
+        public func previewPanel(_ panel: QLPreviewPanel!, sourceFrameOnScreenFor item: QLPreviewItem!) -> NSRect {
+            guard let outlineView, outlineView.selectedRow >= 0, let window = outlineView.window else { return .zero }
+            let rowRectInWindow = outlineView.convert(outlineView.rect(ofRow: outlineView.selectedRow), to: nil)
+            return window.convertToScreen(rowRectInWindow)
         }
 
         // MARK: Context menu (Explore Folder / Copy Path / Delete)
@@ -533,17 +591,23 @@ private extension NSUserInterfaceItemIdentifier {
     static let modifiedColumn = NSUserInterfaceItemIdentifier("modified")
 }
 
-/// Adds Cmd+Backspace / Delete-key handling for "move to Trash". Plain
-/// `NSOutlineView` has no built-in shortcut for this, and an `NSMenuItem`
-/// `keyEquivalent` only fires via the menu bar/a window's main menu — not
-/// for a context menu that isn't currently open — so the key event is
+/// Adds Cmd+Backspace / Delete-key handling for "move to Trash", and Space
+/// for "toggle Quick Look" — Finder's two standard file-list shortcuts.
+/// Plain `NSOutlineView` has neither built in (nor does an `NSMenuItem`
+/// `keyEquivalent`, which only fires via the menu bar/a window's main menu,
+/// not a context menu that isn't currently open), so both key events are
 /// intercepted directly instead.
 private final class DeletingOutlineView: NSOutlineView {
     var onDeleteShortcut: (() -> Void)?
+    var onSpacebarPressed: (() -> Void)?
 
     override func keyDown(with event: NSEvent) {
         if Self.isDeleteShortcut(event) {
             onDeleteShortcut?()
+            return
+        }
+        if event.keyCode == 49, event.charactersIgnoringModifiers == " " { // Space
+            onSpacebarPressed?()
             return
         }
         super.keyDown(with: event)
