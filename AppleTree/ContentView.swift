@@ -1,4 +1,5 @@
 import AppKit
+import AppleTreeCore
 import AppleTreeUI
 import SwiftUI
 
@@ -72,6 +73,10 @@ struct ContentView: View {
                 Spacer()
             }
 
+            if let volumeInfo = appState.volumeInfo, let root = appState.rootNode {
+                VolumeInfoView(selectionName: root.name, info: volumeInfo)
+            }
+
             if let errorMessage = appState.errorMessage {
                 Text(errorMessage)
                     .foregroundStyle(.red)
@@ -111,6 +116,31 @@ struct ContentView: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         appState.startScan(root: url)
+    }
+}
+
+/// Volume-level capacity readout (Selection / Total / Used / Reserved /
+/// Free) — deliberately independent of the scan's own tree total, since a
+/// subfolder scan's size is not the disk's size.
+private struct VolumeInfoView: View {
+    let selectionName: String
+    let info: VolumeInfo
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("Selection: \(selectionName)")
+            Text("Total Space: \(SizeFormatting.string(for: info.totalBytes))")
+            HStack(spacing: 8) {
+                Text("Space Used: \(SizeFormatting.string(for: info.usedBytes)) (\(SizeFormatting.percentString(for: info.usedFraction)))")
+                if info.reservedBytes > 0 {
+                    Text("Reserved Space: \(SizeFormatting.string(for: info.reservedBytes))")
+                }
+            }
+            Text("Space Free: \(SizeFormatting.string(for: info.freeBytes)) (\(SizeFormatting.percentString(for: info.freeFraction)))")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
     }
 }
 

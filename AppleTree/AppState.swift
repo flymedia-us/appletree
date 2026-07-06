@@ -16,6 +16,7 @@ final class AppState {
     private(set) var currentPath: String?
     private(set) var errorMessage: String?
     private(set) var isPermissionNudgeDismissed = false
+    private(set) var volumeInfo: VolumeInfo?
 
     private static let fdaNudgeDontAskAgainKey = "com.samfriedman.AppleTree.fdaNudgeDismissed"
 
@@ -63,6 +64,7 @@ final class AppState {
         currentPath = nil
         errorMessage = nil
         isPermissionNudgeDismissed = false
+        volumeInfo = VolumeInfo.forVolume(containing: root)
         selection.selectedNodeID = nil
 
         let scanner = DirectoryScanner()
