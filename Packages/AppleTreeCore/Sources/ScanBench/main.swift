@@ -105,6 +105,7 @@ func runFullScan() async {
     let scanner = DirectoryScanner()
     var totalFiles = 0
     var totalSkipped = 0
+    var totalTccDenied = 0
     var totalBytes: UInt64 = 0
     var rootNode: FileNode?
 
@@ -118,9 +119,10 @@ func runFullScan() async {
             case .folderSkipped(let path, let reason):
                 totalSkipped += 1
                 print("  skipped: \(path) (\(reason))")
-            case .finished(let duration, let filesScanned, let foldersSkipped):
+            case .finished(let duration, let filesScanned, let foldersSkipped, let tccDeniedFolders):
                 totalFiles = filesScanned
                 totalSkipped = foldersSkipped
+                totalTccDenied = tccDeniedFolders
                 print("Done in \(duration).")
             case .subtreeCompleted, .failed:
                 break
@@ -137,7 +139,7 @@ func runFullScan() async {
         Total size (allocated): \(ByteCountFormatter.string(fromByteCount: Int64(totalBytes), countStyle: .file))
         Total size (logical): \(ByteCountFormatter.string(fromByteCount: Int64(node.logicalSize), countStyle: .file))
         Files scanned: \(totalFiles)
-        Folders skipped: \(totalSkipped)
+        Folders skipped: \(totalSkipped) (\(totalTccDenied) blocked by Full Disk Access / TCC)
         Top-level children: \(node.children.count)
         """)
         // Sanity check: the tree's own aggregate should always match the

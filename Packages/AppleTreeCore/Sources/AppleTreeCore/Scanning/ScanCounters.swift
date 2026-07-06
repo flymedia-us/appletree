@@ -16,12 +16,14 @@ final class ScanCounters: @unchecked Sendable {
         let filesScanned: Int
         let bytesScanned: UInt64
         let foldersSkipped: Int
+        let tccDeniedFolders: Int
     }
 
     private struct State {
         var filesScanned = 0
         var bytesScanned: UInt64 = 0
         var foldersSkipped = 0
+        var tccDeniedFolders = 0
         var lastProgressEmit: ContinuousClock.Instant = .now
         var lastSubtreeCompletedEmit: ContinuousClock.Instant = .now
     }
@@ -50,13 +52,17 @@ final class ScanCounters: @unchecked Sendable {
             return Snapshot(
                 filesScanned: state.filesScanned,
                 bytesScanned: state.bytesScanned,
-                foldersSkipped: state.foldersSkipped
+                foldersSkipped: state.foldersSkipped,
+                tccDeniedFolders: state.tccDeniedFolders
             )
         }
     }
 
-    func addFolderSkipped() {
-        lock.withLock { state in state.foldersSkipped += 1 }
+    func addFolderSkipped(reason: FolderSkipReason) {
+        lock.withLock { state in
+            state.foldersSkipped += 1
+            if reason == .tccDenied { state.tccDeniedFolders += 1 }
+        }
     }
 
     /// Whether enough wall-clock time has passed to emit another
@@ -82,7 +88,8 @@ final class ScanCounters: @unchecked Sendable {
             Snapshot(
                 filesScanned: state.filesScanned,
                 bytesScanned: state.bytesScanned,
-                foldersSkipped: state.foldersSkipped
+                foldersSkipped: state.foldersSkipped,
+                tccDeniedFolders: state.tccDeniedFolders
             )
         }
     }

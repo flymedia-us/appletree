@@ -9,6 +9,15 @@ struct ContentView: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
+            if appState.shouldShowPermissionNudge {
+                PermissionNudgeBanner(
+                    deniedFolderCount: appState.tccDeniedFolders,
+                    onDismiss: appState.dismissPermissionNudge,
+                    onDismissPermanently: appState.dismissPermissionNudgePermanently
+                )
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+            }
             VSplitView {
                 HSplitView {
                     FileTreeView(rootNode: appState.rootNode, selection: appState.selection, treeVersion: appState.scanGeneration, isScanning: appState.isScanning)

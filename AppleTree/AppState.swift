@@ -10,10 +10,28 @@ final class AppState {
     private(set) var filesScanned = 0
     private(set) var bytesScanned: UInt64 = 0
     private(set) var foldersSkipped = 0
+    private(set) var tccDeniedFolders = 0
     private(set) var lastScanDuration: Duration?
     private(set) var scanStartDate: Date?
     private(set) var currentPath: String?
     private(set) var errorMessage: String?
+    private(set) var isPermissionNudgeDismissed = false
+
+    private static let fdaNudgeDontAskAgainKey = "com.samfriedman.AppleTree.fdaNudgeDismissed"
+
+    /// Whether to show the "grant Full Disk Access" banner. Driven entirely
+    /// by what the just-completed scan actually hit (see `FolderSkipReason`)
+    /// rather than a synthetic pre-scan probe: this app is sandboxed, so a
+    /// probe attempted before the user has selected any root has nothing to
+    /// test against — every path is unreachable regardless of FDA, making
+    /// such a check unable to distinguish "FDA not granted" from "sandboxed
+    /// and no folder chosen yet." Real skip evidence from a real scan has no
+    /// such ambiguity.
+    var shouldShowPermissionNudge: Bool {
+        tccDeniedFolders > 0
+            && !isPermissionNudgeDismissed
+            && !UserDefaults.standard.bool(forKey: Self.fdaNudgeDontAskAgainKey)
+    }
 
     /// Bumped whenever the (in-place-mutating) `FileNode` tree changes.
     /// Re-assigning `rootNode` to itself does **not** reliably trigger a
@@ -39,10 +57,12 @@ final class AppState {
         filesScanned = 0
         bytesScanned = 0
         foldersSkipped = 0
+        tccDeniedFolders = 0
         lastScanDuration = nil
         scanStartDate = Date()
         currentPath = nil
         errorMessage = nil
+        isPermissionNudgeDismissed = false
         selection.selectedNodeID = nil
 
         let scanner = DirectoryScanner()
@@ -81,13 +101,15 @@ final class AppState {
             bytesScanned = bytes
             currentPath = path
 
-        case .folderSkipped(_, _):
+        case .folderSkipped(_, let reason):
             foldersSkipped += 1
+            if reason == .tccDenied { tccDeniedFolders += 1 }
 
-        case .finished(let duration, let files, let skipped):
+        case .finished(let duration, let files, let skipped, let tccDenied):
             isScanning = false
             filesScanned = files
             foldersSkipped = skipped
+            tccDeniedFolders = tccDenied
             lastScanDuration = duration
             currentPath = nil
             bumpGeneration(force: true)
@@ -96,6 +118,15 @@ final class AppState {
             isScanning = false
             errorMessage = error.localizedDescription
         }
+    }
+
+    func dismissPermissionNudge() {
+        isPermissionNudgeDismissed = true
+    }
+
+    func dismissPermissionNudgePermanently() {
+        UserDefaults.standard.set(true, forKey: Self.fdaNudgeDontAskAgainKey)
+        isPermissionNudgeDismissed = true
     }
 
     private func bumpGeneration(force: Bool = false) {

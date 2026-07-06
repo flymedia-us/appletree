@@ -103,7 +103,12 @@ public actor DirectoryScanner {
 
         let elapsed = ContinuousClock.now - start
         let final = counters.snapshot()
-        continuation.yield(.finished(duration: elapsed, filesScanned: final.filesScanned, foldersSkipped: final.foldersSkipped))
+        continuation.yield(.finished(
+            duration: elapsed,
+            filesScanned: final.filesScanned,
+            foldersSkipped: final.foldersSkipped,
+            tccDeniedFolders: final.tccDeniedFolders
+        ))
         continuation.finish()
     }
 
@@ -127,8 +132,9 @@ public actor DirectoryScanner {
         }
 
         guard let ftsp = openFTS(at: path) else {
-            counters.addFolderSkipped()
-            continuation.yield(.folderSkipped(path: path, reason: "unable to open directory (errno \(errno))"))
+            let reason = FolderSkipReason(errno: errno)
+            counters.addFolderSkipped(reason: reason)
+            continuation.yield(.folderSkipped(path: path, reason: reason))
             return
         }
         defer { fts_close(ftsp) }
@@ -299,8 +305,9 @@ public actor DirectoryScanner {
 
                 case FTS_DNR, FTS_ERR, FTS_NS:
                     let fullPath = String(cString: entp.pointee.fts_path)
-                    counters.addFolderSkipped()
-                    continuation.yield(.folderSkipped(path: fullPath, reason: "errno \(entp.pointee.fts_errno)"))
+                    let reason = FolderSkipReason(errno: entp.pointee.fts_errno)
+                    counters.addFolderSkipped(reason: reason)
+                    continuation.yield(.folderSkipped(path: fullPath, reason: reason))
 
                     // `fts` visits an unreadable directory (permission
                     // denied — root-owned caches, other users' files, stale

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2B5E6E39753B594719B44E76 /* PermissionNudgeBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8297C2C40EA996DA57BE9270 /* PermissionNudgeBanner.swift */; };
 		3D7C1298EDFCEFC75A4A015F /* AppleTreeUI in Frameworks */ = {isa = PBXBuildFile; productRef = 8CA88D95EA1A7AB039BEE662 /* AppleTreeUI */; };
 		4A5DF073CE2336AC32916356 /* AppleTreeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A148C1BF92057A8016494A2 /* AppleTreeApp.swift */; };
 		9DE302CCBEBEF45BEAE183C8 /* AppleTreeCore in Frameworks */ = {isa = PBXBuildFile; productRef = CB19F02167853F2F3A5A3DDF /* AppleTreeCore */; };
@@ -20,6 +21,7 @@
 		088A089B7D97B3BF3BFE294D /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		0A148C1BF92057A8016494A2 /* AppleTreeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTreeApp.swift; sourceTree = "<group>"; };
 		3B14A61C1EDE2B3A32B6F631 /* AppleTreeUI */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AppleTreeUI; path = Packages/AppleTreeUI; sourceTree = SOURCE_ROOT; };
+		8297C2C40EA996DA57BE9270 /* PermissionNudgeBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionNudgeBanner.swift; sourceTree = "<group>"; };
 		88E07BDBD7281A0E02BBD15B /* AppleTree.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AppleTree.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A8BEBC7600E4F987AAF38A32 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		CEC4AD5E15E88DF71F1A5E4E /* AppleTree.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppleTree.entitlements; sourceTree = "<group>"; };
@@ -47,6 +49,7 @@
 				088A089B7D97B3BF3BFE294D /* AppState.swift */,
 				06AF0644AD79CD3FD6BE8B01 /* Assets.xcassets */,
 				A8BEBC7600E4F987AAF38A32 /* ContentView.swift */,
+				8297C2C40EA996DA57BE9270 /* PermissionNudgeBanner.swift */,
 			);
 			path = AppleTree;
 			sourceTree = "<group>";
@@ -157,6 +160,7 @@
 				B0ED8A9928A0FD09F7BBD8DD /* AppState.swift in Sources */,
 				4A5DF073CE2336AC32916356 /* AppleTreeApp.swift in Sources */,
 				DB22AC9BD5C2EB1FF2C3CC75 /* ContentView.swift in Sources */,
+				2B5E6E39753B594719B44E76 /* PermissionNudgeBanner.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

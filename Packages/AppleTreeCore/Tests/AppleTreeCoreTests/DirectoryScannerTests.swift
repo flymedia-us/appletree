@@ -44,7 +44,7 @@ struct DirectoryScannerTests {
             switch event {
             case .rootCreated(let node):
                 rootNode = node
-            case .finished(_, let scannedCount, let skipped):
+            case .finished(_, let scannedCount, let skipped, _):
                 finished = true
                 filesScanned = scannedCount
                 foldersSkipped = skipped
@@ -145,10 +145,12 @@ struct DirectoryScannerTests {
         let scanner = DirectoryScanner()
         var rootNode: FileNode?
         var foldersSkipped = -1
+        var skipReason: FolderSkipReason?
         for try await event in await scanner.scan(root: root, options: ScanOptions(maxConcurrentWorkers: 1)) {
             switch event {
             case .rootCreated(let node): rootNode = node
-            case .finished(_, _, let skipped): foldersSkipped = skipped
+            case .finished(_, _, let skipped, _): foldersSkipped = skipped
+            case .folderSkipped(_, let reason): skipReason = reason
             default: break
             }
         }
@@ -157,6 +159,16 @@ struct DirectoryScannerTests {
         #expect(foldersSkipped == 1, "the unreadable directory must be reported as skipped, not silently swallowed")
         #expect(node.fileCount == 2, "content in 'after' (a sibling processed later in the SAME inline chain) must still be counted, not lost because 'blocked' orphaned the stack")
         #expect(node.folderCount == 2, "'blocked' and 'after' both count as real (sub)directories even though one is unreadable")
+        #expect(skipReason == .accessDenied, "a directory this process's own chmod blocked is a plain Unix permission denial (EACCES), not TCC (EPERM) — must not be misclassified as Full-Disk-Access-recoverable")
+    }
+
+    @Test("FolderSkipReason classifies errno correctly", arguments: [
+        (EPERM, FolderSkipReason.tccDenied),
+        (EACCES, FolderSkipReason.accessDenied),
+        (ENOENT, FolderSkipReason.other(errno: ENOENT)),
+    ])
+    func folderSkipReasonClassifiesErrno(errno: Int32, expected: FolderSkipReason) {
+        #expect(FolderSkipReason(errno: errno) == expected)
     }
 
     @Test("ioThrottled option still produces a correct scan")
