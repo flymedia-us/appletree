@@ -18,16 +18,14 @@ struct PermissionNudgeBanner: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Skipped \(deniedFolderCount) folder\(deniedFolderCount == 1 ? "" : "s") that macOS restricts without Full Disk Access.")
-                    .font(.callout)
+                    .font(.body)
                 Text("Granting access — and re-scanning the whole disk rather than a subfolder — can recover this space. Local Time Machine snapshots and other users' files stay hidden either way.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.body)
                 HStack(spacing: 12) {
                     Button("Open Privacy Settings…", action: openPrivacySettings)
                     Button("Don't Ask Again", action: onDismissPermanently)
-                        .foregroundStyle(.secondary)
                 }
-                .font(.callout)
+                .font(.body)
                 .padding(.top, 2)
             }
 

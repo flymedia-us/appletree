@@ -57,8 +57,8 @@ final class PercentOfParentCellView: NSView {
 
         let percentText = SizeFormatting.percentString(for: clampedFraction)
         var attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.secondaryLabelColor
+            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .foregroundColor: NSColor.labelColor
         ]
         if isDeleted {
             attributes[.foregroundColor] = NSColor.systemRed

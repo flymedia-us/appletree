@@ -224,12 +224,11 @@ private struct NodeHoverTooltip: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(node.path)
-                .font(.system(size: 11, weight: .medium))
+                .font(.body.weight(.medium))
                 .lineLimit(1)
                 .truncationMode(.middle)
             Text(SizeFormatting.string(for: node.displaySize))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .font(.body)
         }
         .foregroundColor(.white)
         .padding(.horizontal, 8)

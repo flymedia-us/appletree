@@ -43,7 +43,7 @@ struct ContentView: View {
 
     private var toolbar: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 6) {
                 Button("Choose Folder…", action: chooseFolder)
                     .disabled(appState.isScanning)
                 scanTimerText
@@ -53,34 +53,32 @@ struct ContentView: View {
                 ProgressView()
                     .controlSize(.small)
                 Text("\(appState.filesScanned) files, \(SizeFormatting.string(for: appState.bytesScanned))")
-                    .foregroundStyle(.secondary)
-                    .font(.callout)
+                    .font(.body)
                     .lineLimit(1)
-                Spacer()
-                Button("Cancel", action: appState.cancelScan)
             } else if let root = appState.rootNode {
                 Text("\(root.path) — \(SizeFormatting.string(for: root.displaySize)), \(root.fileCount) files")
-                    .foregroundStyle(.secondary)
-                    .font(.callout)
+                    .font(.body)
                     .lineLimit(1)
                 if appState.foldersSkipped > 0 {
                     Text("(\(appState.foldersSkipped) folders skipped)")
-                        .foregroundStyle(.tertiary)
-                        .font(.caption)
+                        .font(.body)
                 }
-                Spacer()
-            } else {
-                Spacer()
             }
 
             if let volumeInfo = appState.volumeInfo, let root = appState.rootNode {
                 VolumeInfoView(selectionName: root.name, info: volumeInfo)
             }
 
+            Spacer()
+
+            if appState.isScanning {
+                Button("Cancel", action: appState.cancelScan)
+            }
+
             if let errorMessage = appState.errorMessage {
                 Text(errorMessage)
                     .foregroundStyle(.red)
-                    .font(.callout)
+                    .font(.body)
             }
         }
         .padding(.horizontal, 12)
@@ -92,13 +90,11 @@ struct ContentView: View {
         if appState.isScanning, let start = appState.scanStartDate {
             TimelineView(.periodic(from: start, by: 0.03)) { context in
                 Text("Scanning for \(Self.secondsString(context.date.timeIntervalSince(start))) seconds")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
+                    .font(.body)
             }
         } else if let duration = appState.lastScanDuration {
             Text("Scan complete in \(Self.secondsString(Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18)) seconds")
-                .foregroundStyle(.secondary)
-                .font(.caption)
+                .font(.body)
         }
     }
 
@@ -128,18 +124,17 @@ private struct VolumeInfoView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text("Selection: \(selectionName)")
-            Text("Total Space: \(SizeFormatting.string(for: info.totalBytes))")
+            Text("Selection: ") + Text(selectionName).bold()
+            Text("Total Space: ") + Text(SizeFormatting.string(for: info.totalBytes)).bold()
             HStack(spacing: 8) {
-                Text("Space Used: \(SizeFormatting.string(for: info.usedBytes)) (\(SizeFormatting.percentString(for: info.usedFraction)))")
+                Text("Space Used: ") + Text("\(SizeFormatting.string(for: info.usedBytes)) (\(SizeFormatting.percentString(for: info.usedFraction)))").bold()
                 if info.reservedBytes > 0 {
-                    Text("Reserved Space: \(SizeFormatting.string(for: info.reservedBytes))")
+                    Text("Reserved Space: ") + Text(SizeFormatting.string(for: info.reservedBytes)).bold()
                 }
             }
-            Text("Space Free: \(SizeFormatting.string(for: info.freeBytes)) (\(SizeFormatting.percentString(for: info.freeFraction)))")
+            Text("Space Free: ") + Text("\(SizeFormatting.string(for: info.freeBytes)) (\(SizeFormatting.percentString(for: info.freeFraction)))").bold()
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
+        .font(.body)
         .lineLimit(1)
     }
 }
