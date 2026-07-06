@@ -54,9 +54,15 @@ enum ExtensionColor {
     ]
 
     static func key(forFileName name: String) -> String {
-        guard let ext = FileCategorizer.fileExtension(forFileName: name) else {
-            return noExtensionKey
-        }
+        key(forExtension: FileCategorizer.fileExtension(forFileName: name))
+    }
+
+    /// Same alias-normalized key as `key(forFileName:)`, but starting from an
+    /// already-extracted extension (or `nil` for extensionless) — used by
+    /// presentation code (e.g. the extension summary table) that already has
+    /// a `FileNode`-independent extension string rather than a raw file name.
+    static func key(forExtension ext: String?) -> String {
+        guard let ext else { return noExtensionKey }
         return aliases[ext] ?? ext
     }
 
@@ -70,6 +76,22 @@ enum ExtensionColor {
         let bottom = Color(hue: hue, saturation: min(1, saturation * 1.15), brightness: 0.60)
         return (top, bottom)
     }
+
+    /// A single flat swatch color for the given extension — the same hue
+    /// `gradient(forFileName:)` would use for that extension's treemap
+    /// boxes, so the extension summary table's color column visually matches
+    /// the treemap below it.
+    static func solidColor(forExtension ext: String?) -> Color {
+        let key = key(forExtension: ext)
+        let hue = curatedHue[key] ?? hashHue(key)
+        return Color(hue: hue, saturation: 0.6, brightness: 0.78)
+    }
+
+    /// Fallback swatch for every file type outside the top-N by size in the
+    /// extension summary table — keeps the color column legible instead of
+    /// giving every long-tail extension its own (likely hash-derived, poorly
+    /// separated) hue.
+    static let unrankedColor = Color(white: 0.35)
 
     /// Deterministic FNV-1a hash of the extension, mapped to a hue — stable
     /// across launches/scans without needing every extension curated by hand.

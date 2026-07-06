@@ -80,6 +80,16 @@ public struct FileTreeView: NSViewRepresentable {
         foldersColumn.sortDescriptorPrototype = NSSortDescriptor(key: SortKey.folders.rawValue, ascending: false)
         outlineView.addTableColumn(foldersColumn)
 
+        // Explicit default sort (Size descending) rather than relying on the
+        // implicit "natural" scan order — this is what lets the Size column
+        // show its header sort indicator from the start instead of no column
+        // appearing active until the user clicks one.
+        outlineView.sortDescriptors = [sizeColumn.sortDescriptorPrototype!]
+
+        outlineView.target = context.coordinator
+        outlineView.doubleAction = #selector(Coordinator.handleDoubleClick(_:))
+        outlineView.menu = context.coordinator.makeContextMenu()
+
         let scrollView = NSScrollView()
         scrollView.documentView = outlineView
         scrollView.hasVerticalScroller = true
@@ -180,6 +190,7 @@ public struct FileTreeView: NSViewRepresentable {
             } else {
                 sortKey = nil
             }
+            updateSortIndicators(outlineView)
             invalidateSortCache()
             outlineView.reloadData()
         }
@@ -234,10 +245,87 @@ public struct FileTreeView: NSViewRepresentable {
             selection.selectedNodeID = node?.id
         }
 
+        // MARK: Double-click (open file / toggle folder)
+
+        @objc func handleDoubleClick(_ sender: NSOutlineView) {
+            let row = sender.clickedRow
+            guard row >= 0, let node = sender.item(atRow: row) as? FileNode else { return }
+            if node.isDirectory {
+                if sender.isItemExpanded(node) {
+                    sender.collapseItem(node)
+                } else {
+                    sender.expandItem(node)
+                }
+            } else {
+                NSWorkspace.shared.open(URL(fileURLWithPath: node.path))
+            }
+        }
+
+        // MARK: Context menu (Explore Folder / Copy Path)
+
+        func makeContextMenu() -> NSMenu {
+            let menu = NSMenu()
+
+            let explore = NSMenuItem(title: "Explore Folder", action: #selector(exploreFolder(_:)), keyEquivalent: "")
+            explore.target = self
+            menu.addItem(explore)
+
+            let copyPath = NSMenuItem(title: "Copy Path", action: #selector(copyPath(_:)), keyEquivalent: "")
+            copyPath.target = self
+            menu.addItem(copyPath)
+
+            return menu
+        }
+
+        /// The row a contextual-menu click landed on — valid while the menu
+        /// built by `makeContextMenu()` is open/being validated, per
+        /// `NSTableView.clickedRow`'s documented behavior.
+        private func contextMenuNode() -> FileNode? {
+            guard let outlineView, outlineView.clickedRow >= 0 else { return nil }
+            return outlineView.item(atRow: outlineView.clickedRow) as? FileNode
+        }
+
+        @objc private func exploreFolder(_ sender: NSMenuItem) {
+            guard let node = contextMenuNode() else { return }
+            let folderURL = node.isDirectory
+                ? URL(fileURLWithPath: node.path)
+                : URL(fileURLWithPath: node.path).deletingLastPathComponent()
+            NSWorkspace.shared.open(folderURL)
+        }
+
+        @objc private func copyPath(_ sender: NSMenuItem) {
+            guard let node = contextMenuNode() else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(node.path, forType: .string)
+        }
+
         // MARK: Sorting
 
         func invalidateSortCache() {
             sortedChildrenCache.removeAll()
+        }
+
+        /// Draws the ascending/descending arrow on whichever column drives
+        /// the current sort (`NSTableView` toggles `sortDescriptors` on
+        /// header clicks by itself, but leaves indicator-image/highlight
+        /// bookkeeping to the delegate).
+        private func updateSortIndicators(_ outlineView: NSOutlineView) {
+            for column in outlineView.tableColumns {
+                outlineView.setIndicatorImage(nil, in: column)
+            }
+            guard let sortKey else {
+                outlineView.highlightedTableColumn = nil
+                return
+            }
+            let identifierForKey: [SortKey: NSUserInterfaceItemIdentifier] = [
+                .name: .folderColumn, .percentOfParent: .percentColumn, .size: .sizeColumn,
+                .logicalSize: .logicalSizeColumn, .files: .filesColumn, .folders: .foldersColumn
+            ]
+            guard let identifier = identifierForKey[sortKey],
+                  let column = outlineView.tableColumns.first(where: { $0.identifier == identifier }) else { return }
+            let imageName = sortAscending ? "NSAscendingSortIndicator" : "NSDescendingSortIndicator"
+            outlineView.setIndicatorImage(NSImage(named: imageName), in: column)
+            outlineView.highlightedTableColumn = column
         }
 
         /// `node.children` in the outline's current display order: the

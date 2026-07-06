@@ -85,13 +85,13 @@ final class TextCellView: NSTableCellView {
     }
 
     static func makeOrReuse(
-        in outlineView: NSOutlineView,
+        in tableView: NSTableView,
         identifier: NSUserInterfaceItemIdentifier,
         text: String,
         alignment: NSTextAlignment
     ) -> TextCellView {
         let view: TextCellView
-        if let reused = outlineView.makeView(withIdentifier: identifier, owner: nil) as? TextCellView {
+        if let reused = tableView.makeView(withIdentifier: identifier, owner: nil) as? TextCellView {
             view = reused
         } else {
             view = TextCellView(frame: .zero)

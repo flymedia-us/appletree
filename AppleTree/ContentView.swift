@@ -10,8 +10,13 @@ struct ContentView: View {
             toolbar
             Divider()
             VSplitView {
-                FileTreeView(rootNode: appState.rootNode, selection: appState.selection, treeVersion: appState.scanGeneration)
-                    .frame(minHeight: 180)
+                HSplitView {
+                    FileTreeView(rootNode: appState.rootNode, selection: appState.selection, treeVersion: appState.scanGeneration)
+                        .frame(minWidth: 320)
+                    ExtensionSummaryView(rootNode: appState.rootNode, treeVersion: appState.scanGeneration)
+                        .frame(minWidth: 260)
+                }
+                .frame(minHeight: 180)
                 TreemapView(rootNode: appState.rootNode, selection: appState.selection, treeVersion: appState.scanGeneration)
                     .frame(minHeight: 180)
             }

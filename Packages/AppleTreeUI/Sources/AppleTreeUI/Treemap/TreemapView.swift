@@ -14,7 +14,7 @@ public struct TreemapView: View {
     @State private var layoutSize: CGSize = .zero
     @State private var layoutedRootID: FileNode.ID?
     @State private var layoutedVersion: Int = -1
-    @State private var hoveredFolder: FileNode?
+    @State private var hoveredNode: FileNode?
     @State private var hoverPoint: CGPoint = .zero
     @State private var relayoutTask: Task<Void, Never>?
 
@@ -41,19 +41,24 @@ public struct TreemapView: View {
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let location):
-                    let folder = TreemapHitTester.hitTestFolderLabel(location, in: layout)
-                    hoveredFolder = folder
+                    // A generic hit-test (not just folder label bands) so
+                    // individual file boxes get the same hover affordances
+                    // (tooltip, faint outline) as folders — files just never
+                    // have a `labelRect`, so this naturally never matches an
+                    // on-box text label, only the drawn box itself.
+                    let node = TreemapHitTester.hitTest(location, in: layout)
+                    hoveredNode = node
                     hoverPoint = location
-                    selection.hoveredNodeID = folder?.id
+                    selection.hoveredNodeID = node?.id
                 case .ended:
-                    hoveredFolder = nil
+                    hoveredNode = nil
                     selection.hoveredNodeID = nil
                 }
             }
             .background(Self.backgroundColor)
             .overlay(alignment: .topLeading) {
-                if let hoveredFolder {
-                    FolderHoverTooltip(node: hoveredFolder)
+                if let hoveredNode {
+                    NodeHoverTooltip(node: hoveredNode)
                         .fixedSize()
                         .offset(tooltipOffset(in: proxy.size))
                         .allowsHitTesting(false)
@@ -193,9 +198,9 @@ public struct TreemapView: View {
     }
 }
 
-/// Small path+size callout that follows the cursor while hovering a folder's
-/// name in the treemap.
-private struct FolderHoverTooltip: View {
+/// Small path+size callout that follows the cursor while hovering any box
+/// (file or folder) in the treemap.
+private struct NodeHoverTooltip: View {
     let node: FileNode
 
     var body: some View {

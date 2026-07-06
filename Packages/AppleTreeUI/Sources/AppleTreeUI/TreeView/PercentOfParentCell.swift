@@ -1,9 +1,12 @@
 import AppKit
 
-/// WizTree's "% of Parent" column: a proportional fill bar and a percentage
-/// number combined in a single cell. Drawn directly in `draw(_:)` rather than
-/// composed from subviews — `NSOutlineView` recycles this view per row on
-/// scroll, and a draw-based cell avoids per-row subview layout cost.
+/// A proportional fill bar and a percentage number combined in a single
+/// cell — used by the Tree View's "% of Parent" column and the extension
+/// summary table's "Percent" (of scan total) column alike, since both are
+/// just "fraction in, bar+number out". Drawn directly in `draw(_:)` rather
+/// than composed from subviews — `NSTableView`/`NSOutlineView` recycle this
+/// view per row on scroll, and a draw-based cell avoids per-row subview
+/// layout cost.
 final class PercentOfParentCellView: NSView {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("PercentOfParentCell")
 
@@ -63,8 +66,8 @@ final class PercentOfParentCellView: NSView {
         percentText.draw(in: textRect, withAttributes: attributes)
     }
 
-    static func makeOrReuse(in outlineView: NSOutlineView, fraction: Double) -> PercentOfParentCellView {
-        let view = (outlineView.makeView(withIdentifier: reuseIdentifier, owner: nil) as? PercentOfParentCellView)
+    static func makeOrReuse(in tableView: NSTableView, fraction: Double) -> PercentOfParentCellView {
+        let view = (tableView.makeView(withIdentifier: reuseIdentifier, owner: nil) as? PercentOfParentCellView)
             ?? PercentOfParentCellView(frame: .zero)
         view.fraction = fraction
         return view
