@@ -113,6 +113,52 @@ struct DirectoryScannerTests {
         }
     }
 
+    /// Regression test for the most severe bug found in this project: a
+    /// real whole-drive scan reported ~67GB instead of the true ~556GB.
+    /// Root cause — `fts` visits an unreadable (permission-denied)
+    /// directory as `FTS_D` (it can stat the entry) immediately followed by
+    /// `FTS_DNR` (it can't read the contents), and confirmed empirically:
+    /// NO `FTS_DP` ever follows for it. An inline (stack-pushed) directory
+    /// that turns out to be unreadable therefore became a permanent orphan
+    /// on top of the stack — every real ancestor above it failed its own
+    /// path-match check forever, undercounting the entire chain up to the
+    /// scan root. `maxConcurrentWorkers: 1` forces every sibling after the
+    /// first to go inline (see the sibling-corruption test above for why),
+    /// so the unreadable directory here is guaranteed to be inline, not
+    /// spawned-and-skipped — the exact shape that triggered the real bug.
+    @Test("an unreadable (permission-denied) inline directory doesn't orphan the stack and undercount its ancestors")
+    func unreadableInlineDirectoryDoesNotOrphanStack() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("appletree-fts-dnr-test-\(UUID().uuidString)", isDirectory: true)
+        let blocked = root.appendingPathComponent("blocked", isDirectory: true)
+        let after = root.appendingPathComponent("after", isDirectory: true)
+        try FileManager.default.createDirectory(at: blocked, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: after, withIntermediateDirectories: true)
+        try Data(repeating: 0, count: 10).write(to: after.appendingPathComponent("f1.txt"))
+        try Data(repeating: 0, count: 10).write(to: after.appendingPathComponent("f2.txt"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: blocked.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: blocked.path)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let scanner = DirectoryScanner()
+        var rootNode: FileNode?
+        var foldersSkipped = -1
+        for try await event in await scanner.scan(root: root, options: ScanOptions(maxConcurrentWorkers: 1)) {
+            switch event {
+            case .rootCreated(let node): rootNode = node
+            case .finished(_, _, let skipped): foldersSkipped = skipped
+            default: break
+            }
+        }
+
+        let node = try #require(rootNode)
+        #expect(foldersSkipped == 1, "the unreadable directory must be reported as skipped, not silently swallowed")
+        #expect(node.fileCount == 2, "content in 'after' (a sibling processed later in the SAME inline chain) must still be counted, not lost because 'blocked' orphaned the stack")
+        #expect(node.folderCount == 2, "'blocked' and 'after' both count as real (sub)directories even though one is unreadable")
+    }
+
     @Test("ioThrottled option still produces a correct scan")
     func ioThrottledOptionScansCorrectly() async throws {
         let root = try makeFixture()

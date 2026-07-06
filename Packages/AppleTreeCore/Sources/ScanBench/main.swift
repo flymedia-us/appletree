@@ -140,5 +140,12 @@ func runFullScan() async {
         Folders skipped: \(totalSkipped)
         Top-level children: \(node.children.count)
         """)
+        // Sanity check: the tree's own aggregate should always match the
+        // live running counter — any divergence means some subtree's
+        // finalize never ran (or ran against an incomplete children list),
+        // which is exactly the shape of bug this project has hit twice.
+        if node.fileCount != totalFiles {
+            print("[WARNING] tree aggregate fileCount (\(node.fileCount)) != live counter (\(totalFiles)) — scanner undercount bug likely present")
+        }
     }
 }
