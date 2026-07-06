@@ -8,15 +8,25 @@ final class AppState {
     private(set) var rootNode: FileNode?
     private(set) var isScanning = false
     private(set) var filesScanned = 0
+    private(set) var foldersScanned = 0
     private(set) var bytesScanned: UInt64 = 0
     private(set) var foldersSkipped = 0
     private(set) var tccDeniedFolders = 0
     private(set) var lastScanDuration: Duration?
-    private(set) var scanStartDate: Date?
     private(set) var currentPath: String?
     private(set) var errorMessage: String?
     private(set) var isPermissionNudgeDismissed = false
     private(set) var volumeInfo: VolumeInfo?
+
+    /// True for the brief window between the scanner finishing its
+    /// filesystem walk (`.finished`) and the Tree View/treemap actually
+    /// rendering that result — approximated as "one main-thread run-loop
+    /// tick", since that's long enough for `NSOutlineView.reloadData()` to
+    /// run. Not pixel-perfect for an extremely large tree whose treemap
+    /// relayout is still debouncing, but good enough to bridge the visible
+    /// gap without wiring real completion callbacks through `FileTreeView`/
+    /// `TreemapView`'s `NSViewRepresentable`/`Canvas` internals.
+    private(set) var isLoadingTree = false
 
     private static let fdaNudgeDontAskAgainKey = "com.samfriedman.AppleTree.fdaNudgeDismissed"
 
@@ -55,12 +65,13 @@ final class AppState {
 
         rootNode = nil
         isScanning = true
+        isLoadingTree = false
         filesScanned = 0
+        foldersScanned = 0
         bytesScanned = 0
         foldersSkipped = 0
         tccDeniedFolders = 0
         lastScanDuration = nil
-        scanStartDate = Date()
         currentPath = nil
         errorMessage = nil
         isPermissionNudgeDismissed = false
@@ -98,8 +109,9 @@ final class AppState {
             // visible benefit between frames.
             bumpGeneration()
 
-        case .progress(let files, let bytes, let path):
+        case .progress(let files, let folders, let bytes, let path):
             filesScanned = files
+            foldersScanned = folders
             bytesScanned = bytes
             currentPath = path
 
@@ -109,12 +121,18 @@ final class AppState {
 
         case .finished(let duration, let files, let skipped, let tccDenied):
             isScanning = false
+            isLoadingTree = true
             filesScanned = files
             foldersSkipped = skipped
             tccDeniedFolders = tccDenied
             lastScanDuration = duration
             currentPath = nil
             bumpGeneration(force: true)
+            // Schedules the flip back to "Scan completed" for the run loop
+            // tick right after this one — see `isLoadingTree`'s doc comment.
+            DispatchQueue.main.async { [weak self] in
+                self?.isLoadingTree = false
+            }
 
         case .failed(let error):
             isScanning = false

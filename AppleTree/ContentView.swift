@@ -46,27 +46,17 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Button("Choose Folder…", action: chooseFolder)
                     .disabled(appState.isScanning)
-                scanTimerText
-            }
-
-            if appState.isScanning {
-                ProgressView()
-                    .controlSize(.small)
-                Text("\(appState.filesScanned) files, \(SizeFormatting.string(for: appState.bytesScanned))")
-                    .font(.body)
-                    .lineLimit(1)
-            } else if let root = appState.rootNode {
-                Text("\(root.path) — \(SizeFormatting.string(for: root.displaySize)), \(root.fileCount) files")
-                    .font(.body)
-                    .lineLimit(1)
-                if appState.foldersSkipped > 0 {
-                    Text("(\(appState.foldersSkipped) folders skipped)")
-                        .font(.body)
+                HStack(spacing: 6) {
+                    if appState.isScanning {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    scanTimerText
                 }
             }
 
             if let volumeInfo = appState.volumeInfo, let root = appState.rootNode {
-                VolumeInfoView(selectionName: root.name, info: volumeInfo)
+                VolumeInfoView(selectionName: selectionLabel(root: root, volumeInfo: volumeInfo), info: volumeInfo)
             }
 
             Spacer()
@@ -85,15 +75,24 @@ struct ContentView: View {
         .padding(.vertical, 8)
     }
 
+    /// The volume root itself (whatever it was mounted at) is shown by its
+    /// friendly volume name; any other selected folder shows its full path,
+    /// since a bare folder name alone (e.g. "Downloads") doesn't disambiguate
+    /// which one when the same name exists in several places.
+    private func selectionLabel(root: FileNode, volumeInfo: VolumeInfo) -> String {
+        root.path == volumeInfo.volumeRootPath ? volumeInfo.volumeName : root.path
+    }
+
     @ViewBuilder
     private var scanTimerText: some View {
-        if appState.isScanning, let start = appState.scanStartDate {
-            TimelineView(.periodic(from: start, by: 0.03)) { context in
-                Text("Scanning for \(Self.secondsString(context.date.timeIntervalSince(start))) seconds")
-                    .font(.body)
-            }
+        if appState.isScanning {
+            Text("Scanning... (Folders: \(SizeFormatting.countString(for: appState.foldersScanned)) Files: \(SizeFormatting.countString(for: appState.filesScanned)))")
+                .font(.body)
+        } else if appState.isLoadingTree {
+            Text("Loading tree")
+                .font(.body)
         } else if let duration = appState.lastScanDuration {
-            Text("Scan complete in \(Self.secondsString(Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18)) seconds")
+            Text("Scan completed in \(Self.secondsString(Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18)) seconds")
                 .font(.body)
         }
     }

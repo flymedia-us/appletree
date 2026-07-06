@@ -15,6 +15,7 @@ final class ScanCounters: @unchecked Sendable {
     struct Snapshot: Sendable {
         let filesScanned: Int
         let bytesScanned: UInt64
+        let foldersScanned: Int
         let foldersSkipped: Int
         let tccDeniedFolders: Int
     }
@@ -22,6 +23,7 @@ final class ScanCounters: @unchecked Sendable {
     private struct State {
         var filesScanned = 0
         var bytesScanned: UInt64 = 0
+        var foldersScanned = 0
         var foldersSkipped = 0
         var tccDeniedFolders = 0
         var lastProgressEmit: ContinuousClock.Instant = .now
@@ -52,10 +54,18 @@ final class ScanCounters: @unchecked Sendable {
             return Snapshot(
                 filesScanned: state.filesScanned,
                 bytesScanned: state.bytesScanned,
+                foldersScanned: state.foldersScanned,
                 foldersSkipped: state.foldersSkipped,
                 tccDeniedFolders: state.tccDeniedFolders
             )
         }
+    }
+
+    /// Records one newly-discovered directory (whether it ends up spawned
+    /// to its own worker or walked inline) — drives the live "Folders: N"
+    /// count shown while a scan is in progress.
+    func addFolder() {
+        lock.withLock { state in state.foldersScanned += 1 }
     }
 
     func addFolderSkipped(reason: FolderSkipReason) {
@@ -88,6 +98,7 @@ final class ScanCounters: @unchecked Sendable {
             Snapshot(
                 filesScanned: state.filesScanned,
                 bytesScanned: state.bytesScanned,
+                foldersScanned: state.foldersScanned,
                 foldersSkipped: state.foldersSkipped,
                 tccDeniedFolders: state.tccDeniedFolders
             )

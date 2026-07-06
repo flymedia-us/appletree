@@ -114,8 +114,8 @@ func runFullScan() async {
             switch event {
             case .rootCreated(let node):
                 rootNode = node
-            case .progress(let files, let bytes, let path):
-                print("  ...\(files) files, \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)) (\(path ?? ""))")
+            case .progress(let files, let folders, let bytes, let path):
+                print("  ...\(files) files, \(folders) folders, \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)) (\(path ?? ""))")
             case .folderSkipped(let path, let reason):
                 totalSkipped += 1
                 print("  skipped: \(path) (\(reason))")

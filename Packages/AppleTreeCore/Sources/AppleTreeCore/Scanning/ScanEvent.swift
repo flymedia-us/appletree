@@ -42,7 +42,7 @@ public enum ScanEvent: Sendable {
     case subtreeCompleted(parent: FileNode)
 
     /// Throttled progress ticks (by file count and/or wall-clock time).
-    case progress(filesScanned: Int, bytesScanned: UInt64, currentPath: String?)
+    case progress(filesScanned: Int, foldersScanned: Int, bytesScanned: UInt64, currentPath: String?)
 
     /// A folder could not be scanned and was skipped rather than failing
     /// the whole scan.

@@ -232,6 +232,7 @@ public actor DirectoryScanner {
                         modificationDate: statp.map { date(from: $0.pointee.st_mtimespec) }
                     )
                     currentParent.addChild(childNode)
+                    counters.addFolder()
 
                     if slots.tryAcquire() {
                         group.addTask {
@@ -298,6 +299,7 @@ public actor DirectoryScanner {
                     if let progress = counters.addFile(bytes: countThisFile ? size : 0) {
                         continuation.yield(.progress(
                             filesScanned: progress.filesScanned,
+                            foldersScanned: progress.foldersScanned,
                             bytesScanned: progress.bytesScanned,
                             currentPath: fullPath
                         ))
