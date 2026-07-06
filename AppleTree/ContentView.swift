@@ -33,8 +33,11 @@ struct ContentView: View {
 
     private var toolbar: some View {
         HStack(spacing: 12) {
-            Button("Choose Folder…", action: chooseFolder)
-                .disabled(appState.isScanning)
+            VStack(alignment: .leading, spacing: 2) {
+                Button("Choose Folder…", action: chooseFolder)
+                    .disabled(appState.isScanning)
+                scanTimerText
+            }
 
             if appState.isScanning {
                 ProgressView()
@@ -68,6 +71,25 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private var scanTimerText: some View {
+        if appState.isScanning, let start = appState.scanStartDate {
+            TimelineView(.periodic(from: start, by: 0.03)) { context in
+                Text("Scanning for \(Self.secondsString(context.date.timeIntervalSince(start))) seconds")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+        } else if let duration = appState.lastScanDuration {
+            Text("Scan complete in \(Self.secondsString(Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18)) seconds")
+                .foregroundStyle(.secondary)
+                .font(.caption)
+        }
+    }
+
+    private static func secondsString(_ seconds: Double) -> String {
+        String(format: "%.2f", seconds)
     }
 
     private func chooseFolder() {

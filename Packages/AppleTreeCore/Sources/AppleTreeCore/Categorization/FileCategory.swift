@@ -5,7 +5,7 @@
 /// reference UI shows "(No Extension)" as a top-level category (often the
 /// single largest slice), so extensionless files must never be silently
 /// folded into the generic catch-all.
-public enum FileCategory: String, Sendable, CaseIterable {
+public enum FileCategory: String, Sendable, CaseIterable, Codable {
     case video
     case image
     case audio

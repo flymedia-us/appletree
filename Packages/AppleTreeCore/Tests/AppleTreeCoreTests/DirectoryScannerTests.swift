@@ -66,6 +66,69 @@ struct DirectoryScannerTests {
         #expect(node.folderCount == 2)
     }
 
+    /// Regression test for a real bug found while stress-testing against a
+    /// ~40K-file SDK tree: `fts_read` emits a phantom post-order `FTS_DP`
+    /// even for a directory that was `FTS_SKIP`'d at its pre-order `FTS_D`
+    /// (confirmed empirically — undocumented either way in BSD's `fts` man
+    /// page). Every directory promoted to a spawned `Task` gets
+    /// `fts_set(..., FTS_SKIP)`'d in the *current* fts session, so without
+    /// tagging skipped entries via `fts_number` and checking it in the
+    /// `FTS_DP` case, that phantom close pops `stack` for a directory that
+    /// was never pushed — silently misattributing every subsequent inline
+    /// sibling/descendant to the wrong (shallower) ancestor. With
+    /// `maxConcurrentWorkers: 1`, the first sibling `fts` encounters always
+    /// wins the sole slot (a synchronous, lock-based `tryAcquire`) and gets
+    /// spawned+skipped, forcing every other sibling inline — deterministically
+    /// reproducing the interleaving that triggered the bug.
+    @Test("a spawned-and-skipped sibling directory never corrupts inline siblings' parenting")
+    func skippedSiblingDoesNotCorruptInlineSiblings() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("appletree-fts-skip-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let siblingCount = 20
+        for i in 0..<siblingCount {
+            let nested = root.appendingPathComponent("sibling\(i)/nested", isDirectory: true)
+            try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+            try Data(repeating: 0, count: 10).write(to: nested.appendingPathComponent("leaf.txt"))
+        }
+
+        let scanner = DirectoryScanner()
+        var rootNode: FileNode?
+        for try await event in await scanner.scan(root: root, options: ScanOptions(maxConcurrentWorkers: 1)) {
+            if case .rootCreated(let node) = event { rootNode = node }
+        }
+
+        let node = try #require(rootNode)
+        #expect(node.fileCount == siblingCount, "every sibling's nested leaf.txt must be counted")
+        #expect(node.folderCount == siblingCount * 2, "each sibling contributes itself + its own 'nested' subdirectory")
+        #expect(node.children.count == siblingCount, "every sibling must be a DIRECT child of root, not misattributed elsewhere")
+
+        for child in node.children {
+            #expect(child.children.count == 1, "sibling \(child.name) must have exactly its own 'nested' subdirectory as a child")
+            guard let nestedChild = child.children.first else { continue }
+            #expect(nestedChild.name == "nested")
+            #expect(nestedChild.children.count == 1, "'nested' must contain exactly its own leaf.txt")
+            #expect(nestedChild.children.first?.name == "leaf.txt")
+        }
+    }
+
+    @Test("ioThrottled option still produces a correct scan")
+    func ioThrottledOptionScansCorrectly() async throws {
+        let root = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let scanner = DirectoryScanner()
+        var rootNode: FileNode?
+        for try await event in await scanner.scan(root: root, options: ScanOptions(ioThrottled: true)) {
+            if case .rootCreated(let node) = event { rootNode = node }
+        }
+
+        let node = try #require(rootNode)
+        #expect(node.fileCount == 3)
+        #expect(node.logicalSize == 300)
+    }
+
     @Test("cancelling the consuming task stops the scan without hanging")
     func cancellationStopsScan() async throws {
         let root = FileManager.default.temporaryDirectory

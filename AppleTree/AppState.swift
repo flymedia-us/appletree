@@ -11,6 +11,7 @@ final class AppState {
     private(set) var bytesScanned: UInt64 = 0
     private(set) var foldersSkipped = 0
     private(set) var lastScanDuration: Duration?
+    private(set) var scanStartDate: Date?
     private(set) var currentPath: String?
     private(set) var errorMessage: String?
 
@@ -39,6 +40,7 @@ final class AppState {
         bytesScanned = 0
         foldersSkipped = 0
         lastScanDuration = nil
+        scanStartDate = Date()
         currentPath = nil
         errorMessage = nil
         selection.selectedNodeID = nil
