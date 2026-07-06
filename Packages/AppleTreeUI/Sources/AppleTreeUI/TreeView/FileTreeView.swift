@@ -259,14 +259,17 @@ public struct FileTreeView: NSViewRepresentable {
                 return TextCellView.makeOrReuse(
                     in: outlineView,
                     identifier: .filesColumn,
-                    text: SizeFormatting.countString(for: node.fileCount),
+                    // A file has no children to count — 0 there would read
+                    // as real data ("this file contains 0 files") rather
+                    // than "not applicable", so leave it blank.
+                    text: node.isDirectory ? SizeFormatting.countString(for: node.fileCount) : "",
                     alignment: .right
                 )
             case .foldersColumn:
                 return TextCellView.makeOrReuse(
                     in: outlineView,
                     identifier: .foldersColumn,
-                    text: SizeFormatting.countString(for: node.folderCount),
+                    text: node.isDirectory ? SizeFormatting.countString(for: node.folderCount) : "",
                     alignment: .right
                 )
             case .modifiedColumn:

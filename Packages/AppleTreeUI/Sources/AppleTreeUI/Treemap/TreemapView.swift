@@ -14,8 +14,10 @@ public struct TreemapView: View {
     @State private var layoutSize: CGSize = .zero
     @State private var layoutedRootID: FileNode.ID?
     @State private var layoutedVersion: Int = -1
-    @State private var hoveredNode: FileNode?
-    @State private var hoverPoint: CGPoint = .zero
+    /// The last-hit box. Doubles as both the hover cache (a tick still
+    /// "inside" it can skip `TreemapHitTester.hitTest`'s O(n) scan entirely)
+    /// and the tooltip's anchor — see `body`'s doc comments for both.
+    @State private var hoveredBox: TreemapNode?
     @State private var relayoutTask: Task<Void, Never>?
 
     public init(rootNode: FileNode?, selection: SelectionModel, treeVersion: Int) {
@@ -35,32 +37,41 @@ public struct TreemapView: View {
             .onChange(of: rootNode?.id) { _, _ in relayout(size: proxy.size) }
             .gesture(
                 SpatialTapGesture().onEnded { value in
-                    selection.selectedNodeID = TreemapHitTester.hitTest(value.location, in: layout)?.id
+                    selection.selectedNodeID = TreemapHitTester.hitTest(value.location, in: layout)?.source.id
                 }
             )
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let location):
-                    // A generic hit-test (not just folder label bands) so
-                    // individual file boxes get the same hover affordances
-                    // (tooltip, faint outline) as folders — files just never
-                    // have a `labelRect`, so this naturally never matches an
-                    // on-box text label, only the drawn box itself.
-                    let node = TreemapHitTester.hitTest(location, in: layout)
-                    hoveredNode = node
-                    hoverPoint = location
-                    selection.hoveredNodeID = node?.id
+                    // Safe to skip the O(n) re-scan only when nothing else
+                    // in `layout` could possibly be nested inside the
+                    // cached box's rect: true for a file (always a leaf),
+                    // and true for a directory only when none of its
+                    // children got their own individually-rendered box.
+                    // Otherwise a child's rect is a geometric *subset* of
+                    // its parent's — caching the parent's (larger) rect
+                    // would make every point inside it, including points
+                    // over its own children, wrongly "still match", so the
+                    // hover would get stuck on that parent forever.
+                    if let hoveredBox,
+                       !(hoveredBox.source.isDirectory && hoveredBox.hasVisibleChildren),
+                       hoveredBox.rect.contains(location) {
+                        return
+                    }
+                    let hit = TreemapHitTester.hitTest(location, in: layout)
+                    hoveredBox = hit
+                    selection.hoveredNodeID = hit?.source.id
                 case .ended:
-                    hoveredNode = nil
+                    hoveredBox = nil
                     selection.hoveredNodeID = nil
                 }
             }
             .background(Self.backgroundColor)
             .overlay(alignment: .topLeading) {
-                if let hoveredNode {
-                    NodeHoverTooltip(node: hoveredNode)
+                if let hoveredBox {
+                    NodeHoverTooltip(node: hoveredBox.source)
                         .fixedSize()
-                        .offset(tooltipOffset(in: proxy.size))
+                        .offset(tooltipOffset(for: hoveredBox.rect, in: proxy.size))
                         .allowsHitTesting(false)
                 }
             }
@@ -75,18 +86,20 @@ public struct TreemapView: View {
     private static let selectedOutline = Color.white
     private static let hoveredOutline = Color.white.opacity(0.5)
 
-    /// Keeps the tooltip from running off the far edge of the canvas by
-    /// flipping which side of the cursor it renders on, using a rough
-    /// estimate of the tooltip's own footprint (its real size isn't known
-    /// until SwiftUI lays it out).
-    private func tooltipOffset(in containerSize: CGSize) -> CGSize {
+    /// Pins the tooltip near the hovered box's top-left corner rather than
+    /// the live cursor position — deliberately, not just for simplicity: it
+    /// means the tooltip only needs to move (and the view only needs to
+    /// re-render) when the hovered box itself changes, not on every pixel
+    /// the mouse crosses while still inside the same box. Flips to whichever
+    /// side keeps it fully inside the canvas.
+    private func tooltipOffset(for rect: CGRect, in containerSize: CGSize) -> CGSize {
         let estimatedWidth: CGFloat = 260
         let estimatedHeight: CGFloat = 40
-        let margin: CGFloat = 14
-        let flipX = hoverPoint.x + margin + estimatedWidth > containerSize.width
-        let flipY = hoverPoint.y + margin + estimatedHeight > containerSize.height
-        let x = flipX ? hoverPoint.x - margin - estimatedWidth : hoverPoint.x + margin
-        let y = flipY ? hoverPoint.y - margin - estimatedHeight : hoverPoint.y + margin
+        let margin: CGFloat = 8
+        let flipX = rect.minX + margin + estimatedWidth > containerSize.width
+        let flipY = rect.minY + margin + estimatedHeight > containerSize.height
+        let x = flipX ? max(0, rect.maxX - estimatedWidth) : rect.minX + margin
+        let y = flipY ? max(0, rect.minY - estimatedHeight - margin) : rect.minY + margin
         return CGSize(width: x, height: y)
     }
 
@@ -123,6 +136,11 @@ public struct TreemapView: View {
             }.value
             guard !Task.isCancelled else { return }
             self.layout = computed
+            // The cached hover box may no longer correspond to anything at
+            // its old screen position under the new layout — drop it so the
+            // next hover tick (even a tiny one) re-hit-tests instead of
+            // trusting stale geometry.
+            self.hoveredBox = nil
         }
     }
 
