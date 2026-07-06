@@ -32,7 +32,10 @@ public struct FileTreeView: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
-        let outlineView = NSOutlineView()
+        let outlineView = DeletingOutlineView()
+        outlineView.onDeleteShortcut = { [weak coordinator = context.coordinator] in
+            coordinator?.deleteSelectedItem()
+        }
         outlineView.dataSource = context.coordinator
         outlineView.delegate = context.coordinator
         outlineView.usesAlternatingRowBackgroundColors = true
@@ -126,6 +129,7 @@ public struct FileTreeView: NSViewRepresentable {
         let isNewRoot = coordinator.rootNode !== rootNode
         if isNewRoot {
             coordinator.rootNode = rootNode
+            coordinator.deletedNodeIDs.removeAll()
         }
 
         // A directory's size is only final once *its own* `finalizeAsDirectory()`
@@ -198,6 +202,12 @@ public struct FileTreeView: NSViewRepresentable {
         private var sortAscending = false
         private var sortedChildrenCache: [ObjectIdentifier: [FileNode]] = [:]
 
+        /// Items moved to the Trash this session — tracked here (not on
+        /// `FileNode` itself) purely for the strikethrough presentation;
+        /// `FileNode` stays a framework-free data model. Reset whenever the
+        /// root changes (a fresh scan has nothing to mark deleted).
+        var deletedNodeIDs: Set<FileNode.ID> = []
+
         init(selection: SelectionModel) {
             self.selection = selection
         }
@@ -235,25 +245,28 @@ public struct FileTreeView: NSViewRepresentable {
 
         public func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
             guard let node = item as? FileNode, let columnID = tableColumn?.identifier else { return nil }
+            let isDeleted = deletedNodeIDs.contains(node.id)
 
             switch columnID {
             case .folderColumn:
-                return FolderCellView.makeOrReuse(in: outlineView, node: node)
+                return FolderCellView.makeOrReuse(in: outlineView, node: node, isDeleted: isDeleted)
             case .percentColumn:
-                return PercentOfParentCellView.makeOrReuse(in: outlineView, fraction: node.fractionOfParent)
+                return PercentOfParentCellView.makeOrReuse(in: outlineView, fraction: node.fractionOfParent, isDeleted: isDeleted)
             case .sizeColumn:
                 return TextCellView.makeOrReuse(
                     in: outlineView,
                     identifier: .sizeColumn,
                     text: SizeFormatting.string(for: node.displaySize),
-                    alignment: .right
+                    alignment: .right,
+                    isDeleted: isDeleted
                 )
             case .logicalSizeColumn:
                 return TextCellView.makeOrReuse(
                     in: outlineView,
                     identifier: .logicalSizeColumn,
                     text: SizeFormatting.string(for: node.logicalSize),
-                    alignment: .right
+                    alignment: .right,
+                    isDeleted: isDeleted
                 )
             case .filesColumn:
                 return TextCellView.makeOrReuse(
@@ -263,21 +276,24 @@ public struct FileTreeView: NSViewRepresentable {
                     // as real data ("this file contains 0 files") rather
                     // than "not applicable", so leave it blank.
                     text: node.isDirectory ? SizeFormatting.countString(for: node.fileCount) : "",
-                    alignment: .right
+                    alignment: .right,
+                    isDeleted: isDeleted
                 )
             case .foldersColumn:
                 return TextCellView.makeOrReuse(
                     in: outlineView,
                     identifier: .foldersColumn,
                     text: node.isDirectory ? SizeFormatting.countString(for: node.folderCount) : "",
-                    alignment: .right
+                    alignment: .right,
+                    isDeleted: isDeleted
                 )
             case .modifiedColumn:
                 return TextCellView.makeOrReuse(
                     in: outlineView,
                     identifier: .modifiedColumn,
                     text: SizeFormatting.dateString(for: node.modificationDate),
-                    alignment: .left
+                    alignment: .left,
+                    isDeleted: isDeleted
                 )
             default:
                 return nil
@@ -307,7 +323,7 @@ public struct FileTreeView: NSViewRepresentable {
             }
         }
 
-        // MARK: Context menu (Explore Folder / Copy Path)
+        // MARK: Context menu (Explore Folder / Copy Path / Delete)
 
         func makeContextMenu() -> NSMenu {
             let menu = NSMenu()
@@ -319,6 +335,12 @@ public struct FileTreeView: NSViewRepresentable {
             let copyPath = NSMenuItem(title: "Copy Path", action: #selector(copyPath(_:)), keyEquivalent: "")
             copyPath.target = self
             menu.addItem(copyPath)
+
+            menu.addItem(.separator())
+
+            let delete = NSMenuItem(title: "Delete", action: #selector(deleteFromContextMenu(_:)), keyEquivalent: "")
+            delete.target = self
+            menu.addItem(delete)
 
             return menu
         }
@@ -343,6 +365,50 @@ public struct FileTreeView: NSViewRepresentable {
             guard let node = contextMenuNode() else { return }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(node.path, forType: .string)
+        }
+
+        // MARK: Delete (move to Trash)
+
+        @objc private func deleteFromContextMenu(_ sender: NSMenuItem) {
+            guard let node = contextMenuNode() else { return }
+            delete(node)
+        }
+
+        /// Entry point for the Cmd+Backspace / Delete-key shortcut — acts on
+        /// the current selection rather than whatever was last right-clicked.
+        func deleteSelectedItem() {
+            guard let outlineView, outlineView.selectedRow >= 0,
+                  let node = outlineView.item(atRow: outlineView.selectedRow) as? FileNode else { return }
+            delete(node)
+        }
+
+        private func delete(_ node: FileNode) {
+            guard !deletedNodeIDs.contains(node.id) else { return }
+            let path = node.path
+            let nodeID = node.id
+            Task {
+                do {
+                    // `FileManager.trashItem` is a blocking syscall — usually
+                    // a fast rename, but can involve a real copy for a large
+                    // item on a different volume than the Trash, so it's run
+                    // off the main actor rather than freezing the UI for it.
+                    try await Task.detached(priority: .userInitiated) {
+                        try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil)
+                    }.value
+                    markDeleted(nodeID)
+                } catch {
+                    // Left unmarked/un-struck-through on failure (e.g.
+                    // permission denied, already moved externally) — the row
+                    // simply stays as it was, which already communicates
+                    // "nothing changed" without a separate error path.
+                }
+            }
+        }
+
+        private func markDeleted(_ id: FileNode.ID) {
+            deletedNodeIDs.insert(id)
+            guard let outlineView, let node = findNode(withID: id, in: rootNode) else { return }
+            outlineView.reloadItem(node)
         }
 
         // MARK: Sorting
@@ -465,4 +531,32 @@ private extension NSUserInterfaceItemIdentifier {
     static let filesColumn = NSUserInterfaceItemIdentifier("files")
     static let foldersColumn = NSUserInterfaceItemIdentifier("folders")
     static let modifiedColumn = NSUserInterfaceItemIdentifier("modified")
+}
+
+/// Adds Cmd+Backspace / Delete-key handling for "move to Trash". Plain
+/// `NSOutlineView` has no built-in shortcut for this, and an `NSMenuItem`
+/// `keyEquivalent` only fires via the menu bar/a window's main menu — not
+/// for a context menu that isn't currently open — so the key event is
+/// intercepted directly instead.
+private final class DeletingOutlineView: NSOutlineView {
+    var onDeleteShortcut: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        if Self.isDeleteShortcut(event) {
+            onDeleteShortcut?()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    private static func isDeleteShortcut(_ event: NSEvent) -> Bool {
+        switch event.keyCode {
+        case 51: // Backspace/Delete key
+            return event.modifierFlags.contains(.command)
+        case 117: // Forward Delete (labeled "Delete" on keyboards that have both)
+            return true
+        default:
+            return false
+        }
+    }
 }

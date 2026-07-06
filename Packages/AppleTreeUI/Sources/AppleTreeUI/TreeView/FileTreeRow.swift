@@ -40,8 +40,13 @@ final class FolderCellView: NSTableCellView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(node: FileNode) {
-        nameField.stringValue = node.name
+    func configure(node: FileNode, isDeleted: Bool) {
+        if isDeleted {
+            nameField.attributedStringValue = NSAttributedString(string: node.name, attributes: DeletedItemStyle.attributes())
+        } else {
+            nameField.stringValue = node.name
+            nameField.textColor = .labelColor
+        }
         if node.isDirectory {
             imageView?.image = NSWorkspace.shared.icon(for: .folder)
         } else {
@@ -51,11 +56,27 @@ final class FolderCellView: NSTableCellView {
         }
     }
 
-    static func makeOrReuse(in outlineView: NSOutlineView, node: FileNode) -> FolderCellView {
+    static func makeOrReuse(in outlineView: NSOutlineView, node: FileNode, isDeleted: Bool) -> FolderCellView {
         let view = (outlineView.makeView(withIdentifier: reuseIdentifier, owner: nil) as? FolderCellView)
             ?? FolderCellView(frame: .zero)
-        view.configure(node: node)
+        view.configure(node: node, isDeleted: isDeleted)
         return view
+    }
+}
+
+/// Shared red-strikethrough styling for an item moved to the Trash — applied
+/// consistently across every text-bearing cell type in the Tree View (name,
+/// size, dates, ...) so a deleted row reads as struck-through end to end,
+/// not just its name.
+enum DeletedItemStyle {
+    static func attributes(alignment: NSTextAlignment = .natural) -> [NSAttributedString.Key: Any] {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = alignment
+        return [
+            .foregroundColor: NSColor.systemRed,
+            .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+            .paragraphStyle: paragraph
+        ]
     }
 }
 
@@ -79,16 +100,22 @@ final class TextCellView: NSTableCellView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(text: String, alignment: NSTextAlignment) {
-        field.stringValue = text
+    func configure(text: String, alignment: NSTextAlignment, isDeleted: Bool = false) {
         field.alignment = alignment
+        if isDeleted {
+            field.attributedStringValue = NSAttributedString(string: text, attributes: DeletedItemStyle.attributes(alignment: alignment))
+        } else {
+            field.stringValue = text
+            field.textColor = .labelColor
+        }
     }
 
     static func makeOrReuse(
         in tableView: NSTableView,
         identifier: NSUserInterfaceItemIdentifier,
         text: String,
-        alignment: NSTextAlignment
+        alignment: NSTextAlignment,
+        isDeleted: Bool = false
     ) -> TextCellView {
         let view: TextCellView
         if let reused = tableView.makeView(withIdentifier: identifier, owner: nil) as? TextCellView {
@@ -97,7 +124,7 @@ final class TextCellView: NSTableCellView {
             view = TextCellView(frame: .zero)
             view.identifier = identifier
         }
-        view.configure(text: text, alignment: alignment)
+        view.configure(text: text, alignment: alignment, isDeleted: isDeleted)
         return view
     }
 }

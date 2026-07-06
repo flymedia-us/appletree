@@ -14,6 +14,10 @@ final class PercentOfParentCellView: NSView {
         didSet { needsDisplay = true }
     }
 
+    var isDeleted: Bool = false {
+        didSet { needsDisplay = true }
+    }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         identifier = Self.reuseIdentifier
@@ -52,10 +56,14 @@ final class PercentOfParentCellView: NSView {
         }
 
         let percentText = SizeFormatting.percentString(for: clampedFraction)
-        let attributes: [NSAttributedString.Key: Any] = [
+        var attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11),
             .foregroundColor: NSColor.secondaryLabelColor
         ]
+        if isDeleted {
+            attributes[.foregroundColor] = NSColor.systemRed
+            attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+        }
         let textSize = percentText.size(withAttributes: attributes)
         let textRect = NSRect(
             x: barRect.maxX + 6,
@@ -66,10 +74,11 @@ final class PercentOfParentCellView: NSView {
         percentText.draw(in: textRect, withAttributes: attributes)
     }
 
-    static func makeOrReuse(in tableView: NSTableView, fraction: Double) -> PercentOfParentCellView {
+    static func makeOrReuse(in tableView: NSTableView, fraction: Double, isDeleted: Bool = false) -> PercentOfParentCellView {
         let view = (tableView.makeView(withIdentifier: reuseIdentifier, owner: nil) as? PercentOfParentCellView)
             ?? PercentOfParentCellView(frame: .zero)
         view.fraction = fraction
+        view.isDeleted = isDeleted
         return view
     }
 }
