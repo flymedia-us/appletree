@@ -77,7 +77,9 @@ public actor DirectoryScanner {
             name: rootName.isEmpty ? path : rootName,
             isDirectory: isRootDirectory,
             logicalSize: isRootDirectory ? 0 : UInt64(rootStat.st_size),
-            allocatedSize: isRootDirectory ? 0 : UInt64(rootStat.st_blocks) * 512
+            allocatedSize: isRootDirectory ? 0 : UInt64(rootStat.st_blocks) * 512,
+            modificationDate: date(from: rootStat.st_mtimespec),
+            rootPath: path
         )
         continuation.yield(.rootCreated(rootNode))
 
@@ -149,7 +151,8 @@ public actor DirectoryScanner {
                     // via a real scan: ~4TB counted twice, once under
                     // /System and again under /Users et al). Skip both the
                     // node creation and the descent for a repeat.
-                    if let statp = entp.pointee.fts_statp {
+                    let statp = entp.pointee.fts_statp
+                    if let statp {
                         let isFirstVisit = inodeTracker.markSeenReturningIsFirst(
                             device: statp.pointee.st_dev,
                             inode: UInt64(statp.pointee.st_ino)
@@ -162,7 +165,11 @@ public actor DirectoryScanner {
 
                     let fullPath = String(cString: entp.pointee.fts_path)
                     let name = (fullPath as NSString).lastPathComponent
-                    let childNode = FileNode(name: name, isDirectory: true)
+                    let childNode = FileNode(
+                        name: name,
+                        isDirectory: true,
+                        modificationDate: statp.map { date(from: $0.pointee.st_mtimespec) }
+                    )
                     currentParent.addChild(childNode)
 
                     if slots.tryAcquire() {
@@ -214,7 +221,8 @@ public actor DirectoryScanner {
                         isDirectory: false,
                         logicalSize: countThisFile ? size : 0,
                         allocatedSize: countThisFile ? allocated : 0,
-                        category: FileCategorizer.category(forFileName: name)
+                        category: FileCategorizer.category(forFileName: name),
+                        modificationDate: date(from: statp.pointee.st_mtimespec)
                     )
                     currentParent.addChild(fileNode)
 
@@ -236,6 +244,10 @@ public actor DirectoryScanner {
                 }
             }
         }
+    }
+
+    private static func date(from ts: timespec) -> Date {
+        Date(timeIntervalSince1970: Double(ts.tv_sec) + Double(ts.tv_nsec) / 1_000_000_000)
     }
 
     private static func openFTS(at path: String) -> UnsafeMutablePointer<FTS>? {

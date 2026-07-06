@@ -15,4 +15,21 @@ public enum SizeFormatting {
         let clamped = max(0, min(1, fraction))
         return String(format: "%.1f%%", clamped * 100)
     }
+
+    /// Grouped/comma-separated integer (e.g. `1,000` rather than `1000`) —
+    /// used by the Files/Folders columns in both tables.
+    public static func countString(for count: Int) -> String {
+        count.formatted(.number)
+    }
+
+    /// `nil` (files/folders with no recorded modification time — the root
+    /// of a scan whose `lstat` somehow lacked one) renders as an em dash
+    /// rather than an empty cell, so it reads as "no data" not "not loaded".
+    public static func dateString(for date: Date?) -> String {
+        guard let date else { return "—" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
 }

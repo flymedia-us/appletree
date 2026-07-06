@@ -81,7 +81,11 @@ public struct ExtensionSummaryView: NSViewRepresentable {
         // Default sort (Size descending) matches the Tree View's default and
         // gives the Size column a header indicator from the start, rather
         // than the table appearing unsorted until the user clicks a header.
+        // AppKit's own header comment for `sortDescriptors` only promises
+        // its setter "may" call the delegate back, so the callback is
+        // invoked directly rather than assuming that side effect fires.
         tableView.sortDescriptors = [sizeColumn.sortDescriptorPrototype!]
+        context.coordinator.tableView(tableView, sortDescriptorsDidChange: [])
 
         let scrollView = NSScrollView()
         scrollView.documentView = tableView
@@ -254,7 +258,7 @@ public struct ExtensionSummaryView: NSViewRepresentable {
                 return TextCellView.makeOrReuse(
                     in: tableView,
                     identifier: .filesColumn,
-                    text: "\(summary.fileCount)",
+                    text: SizeFormatting.countString(for: summary.fileCount),
                     alignment: .right
                 )
             default:

@@ -42,6 +42,18 @@ public final class FileNode: @unchecked Sendable {
 
     public internal(set) var category: FileCategory
 
+    /// Last-modified time from `stat`'s `st_mtimespec` — the file's own for a
+    /// file, or the directory's own (not an aggregate of its contents) for a
+    /// directory, matching Finder's "Date Modified" column convention.
+    public internal(set) var modificationDate: Date?
+
+    /// Set only on a scan's root node — the absolute path the scan started
+    /// from. `name` alone is just that path's *last* component (see `name`'s
+    /// doc comment), which isn't enough to reconstruct a real filesystem
+    /// path for the root, since nothing above it is modeled in the tree.
+    /// Every other node leaves this `nil` and reconstructs via `parent`.
+    public internal(set) var rootPath: String?
+
     public weak var parent: FileNode?
 
     public init(
@@ -53,6 +65,8 @@ public final class FileNode: @unchecked Sendable {
         folderCount: Int = 0,
         children: [FileNode] = [],
         category: FileCategory = .noExtension,
+        modificationDate: Date? = nil,
+        rootPath: String? = nil,
         parent: FileNode? = nil
     ) {
         self.name = name
@@ -63,18 +77,29 @@ public final class FileNode: @unchecked Sendable {
         self.folderCount = folderCount
         self.children = children
         self.category = category
+        self.modificationDate = modificationDate
+        self.rootPath = rootPath
         self.parent = parent
     }
 
-    /// Full filesystem path, reconstructed by walking `parent`.
+    /// Full filesystem path, reconstructed by walking `parent`. The
+    /// top-most ancestor's `name` is replaced with its `rootPath` (when
+    /// set) rather than joined as-is, since a root's `name` is only its
+    /// last path component.
     public var path: String {
         var components: [String] = [name]
+        var root = self
         var current = parent
         while let node = current {
             components.append(node.name)
+            root = node
             current = node.parent
         }
-        return components.reversed().joined(separator: "/")
+        var ordered = Array(components.reversed())
+        if let rootPath = root.rootPath {
+            ordered[0] = rootPath
+        }
+        return ordered.joined(separator: "/")
     }
 
     /// The size that drives sorting, treemap area, and the Tree View's Size

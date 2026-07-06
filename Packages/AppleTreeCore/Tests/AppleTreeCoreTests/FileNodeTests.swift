@@ -50,6 +50,19 @@ struct FileNodeTests {
         #expect(leaf.path == "root/mid/leaf.txt")
     }
 
+    @Test("path uses rootPath (the real absolute path) in place of the root's name, which is only its last path component")
+    func pathUsesRootPath() {
+        let root = FileNode(name: "apple-tree", isDirectory: true, rootPath: "/Users/sam/code/apple-tree")
+        let mid = FileNode(name: "mid", isDirectory: true)
+        let leaf = FileNode(name: "leaf.txt", isDirectory: false)
+
+        root.addChild(mid)
+        mid.addChild(leaf)
+
+        #expect(root.path == "/Users/sam/code/apple-tree")
+        #expect(leaf.path == "/Users/sam/code/apple-tree/mid/leaf.txt")
+    }
+
     @Test("id is stable reference identity, distinct per node")
     func identityIsStable() {
         let a = FileNode(name: "a", isDirectory: false)

@@ -11,10 +11,15 @@ struct ContentView: View {
             Divider()
             VSplitView {
                 HSplitView {
-                    FileTreeView(rootNode: appState.rootNode, selection: appState.selection, treeVersion: appState.scanGeneration)
-                        .frame(minWidth: 320)
+                    // `idealWidth` here is a 60/40 split of the window's own
+                    // 800pt `minWidth` below — `HSplitView` uses each pane's
+                    // ideal size as its starting proportion, so this only
+                    // sets the *default* divider position; the user can
+                    // still drag it anywhere between the two `minWidth`s.
+                    FileTreeView(rootNode: appState.rootNode, selection: appState.selection, treeVersion: appState.scanGeneration, isScanning: appState.isScanning)
+                        .frame(minWidth: 320, idealWidth: 480)
                     ExtensionSummaryView(rootNode: appState.rootNode, treeVersion: appState.scanGeneration)
-                        .frame(minWidth: 260)
+                        .frame(minWidth: 260, idealWidth: 320)
                 }
                 .frame(minHeight: 180)
                 TreemapView(rootNode: appState.rootNode, selection: appState.selection, treeVersion: appState.scanGeneration)

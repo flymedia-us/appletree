@@ -19,11 +19,16 @@ public struct FileTreeView: NSViewRepresentable {
     /// scan pipeline) so that constructing this view with a new value here
     /// is what actually drives `updateNSView` to re-run and reload.
     public var treeVersion: Int
+    /// Whether a scan is currently in progress. Used only to detect the
+    /// scanning→idle transition — see `updateNSView`'s doc comment on why
+    /// that moment (and only that moment) needs a full reload.
+    public var isScanning: Bool
 
-    public init(rootNode: FileNode?, selection: SelectionModel, treeVersion: Int) {
+    public init(rootNode: FileNode?, selection: SelectionModel, treeVersion: Int, isScanning: Bool) {
         self.rootNode = rootNode
         self.selection = selection
         self.treeVersion = treeVersion
+        self.isScanning = isScanning
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
@@ -80,11 +85,25 @@ public struct FileTreeView: NSViewRepresentable {
         foldersColumn.sortDescriptorPrototype = NSSortDescriptor(key: SortKey.folders.rawValue, ascending: false)
         outlineView.addTableColumn(foldersColumn)
 
+        let modifiedColumn = NSTableColumn(identifier: .modifiedColumn)
+        modifiedColumn.title = "Modified"
+        modifiedColumn.minWidth = 130
+        modifiedColumn.width = 170
+        modifiedColumn.sortDescriptorPrototype = NSSortDescriptor(key: SortKey.modified.rawValue, ascending: false)
+        outlineView.addTableColumn(modifiedColumn)
+
         // Explicit default sort (Size descending) rather than relying on the
         // implicit "natural" scan order — this is what lets the Size column
         // show its header sort indicator from the start instead of no column
-        // appearing active until the user clicks one.
-        outlineView.sortDescriptors = [sizeColumn.sortDescriptorPrototype!]
+        // appearing active until the user clicks one. AppKit's own header
+        // comment for `sortDescriptors` only promises its setter "may" call
+        // the delegate back (confirmed unreliable in practice: the initial
+        // sort silently didn't take effect until the user manually toggled
+        // the Size column), so the delegate callback is invoked directly
+        // instead of assuming the property setter's side effect fires.
+        let defaultSort = sizeColumn.sortDescriptorPrototype!
+        outlineView.sortDescriptors = [defaultSort]
+        context.coordinator.outlineView(outlineView, sortDescriptorsDidChange: [])
 
         outlineView.target = context.coordinator
         outlineView.doubleAction = #selector(Coordinator.handleDoubleClick(_:))
@@ -109,6 +128,18 @@ public struct FileTreeView: NSViewRepresentable {
             coordinator.rootNode = rootNode
         }
 
+        // A directory's size is only final once *its own* `finalizeAsDirectory()`
+        // has run (during an active scan it reads 0/partial), so a sort by
+        // Size only reflects real values once scanning ends. `reloadItem`
+        // below doesn't reliably re-order already-materialized rows whose
+        // child *count* hasn't changed since the last reload (only their
+        // now-final sizes have) — only `reloadData()` is guaranteed to pick
+        // up the corrected order, which is exactly what a manual header
+        // re-click was doing. So: cheap incremental reloads while scanning,
+        // one guaranteed full reload right when it finishes.
+        let justFinishedScanning = coordinator.lastIsScanning && !isScanning
+        coordinator.lastIsScanning = isScanning
+
         if isNewRoot || coordinator.lastTreeVersion != treeVersion {
             coordinator.lastTreeVersion = treeVersion
             coordinator.invalidateSortCache()
@@ -120,16 +151,20 @@ public struct FileTreeView: NSViewRepresentable {
                     outlineView.expandItem(rootNode)
                 }
             } else if let rootNode {
-                // An in-progress scan bumps `treeVersion` roughly every
-                // 100ms; `reloadData()` on every one of those was disruptive
-                // enough (a live scan of a large tree fires this dozens of
-                // times) to interfere with the user's own disclosure-triangle
-                // clicks. `reloadItem(reloadChildren:)` targets just the
-                // subtree that changed and, per AppKit's documented behavior,
-                // preserves each item's expansion/selection state by
-                // identity — `FileNode` instances are mutated in place and
-                // never recreated, so identity is stable across reloads.
-                outlineView.reloadItem(rootNode, reloadChildren: true)
+                if justFinishedScanning {
+                    outlineView.reloadData()
+                } else {
+                    // An in-progress scan bumps `treeVersion` roughly every
+                    // 100ms; `reloadData()` on every one of those was disruptive
+                    // enough (a live scan of a large tree fires this dozens of
+                    // times) to interfere with the user's own disclosure-triangle
+                    // clicks. `reloadItem(reloadChildren:)` targets just the
+                    // subtree that changed and, per AppKit's documented behavior,
+                    // preserves each item's expansion/selection state by
+                    // identity — `FileNode` instances are mutated in place and
+                    // never recreated, so identity is stable across reloads.
+                    outlineView.reloadItem(rootNode, reloadChildren: true)
+                }
             } else {
                 outlineView.reloadData()
             }
@@ -147,13 +182,14 @@ public struct FileTreeView: NSViewRepresentable {
     /// in `FileNode.finalizeAsDirectory`) — the default, matching the
     /// treemap's own ordering.
     enum SortKey: String {
-        case name, percentOfParent, size, logicalSize, files, folders
+        case name, percentOfParent, size, logicalSize, files, folders, modified
     }
 
     @MainActor
     public final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
         var rootNode: FileNode?
         var lastTreeVersion = -1
+        var lastIsScanning = false
         weak var outlineView: NSOutlineView?
         let selection: SelectionModel
         private var isSyncingSelection = false
@@ -223,15 +259,22 @@ public struct FileTreeView: NSViewRepresentable {
                 return TextCellView.makeOrReuse(
                     in: outlineView,
                     identifier: .filesColumn,
-                    text: "\(node.fileCount)",
+                    text: SizeFormatting.countString(for: node.fileCount),
                     alignment: .right
                 )
             case .foldersColumn:
                 return TextCellView.makeOrReuse(
                     in: outlineView,
                     identifier: .foldersColumn,
-                    text: "\(node.folderCount)",
+                    text: SizeFormatting.countString(for: node.folderCount),
                     alignment: .right
+                )
+            case .modifiedColumn:
+                return TextCellView.makeOrReuse(
+                    in: outlineView,
+                    identifier: .modifiedColumn,
+                    text: SizeFormatting.dateString(for: node.modificationDate),
+                    alignment: .left
                 )
             default:
                 return nil
@@ -319,7 +362,8 @@ public struct FileTreeView: NSViewRepresentable {
             }
             let identifierForKey: [SortKey: NSUserInterfaceItemIdentifier] = [
                 .name: .folderColumn, .percentOfParent: .percentColumn, .size: .sizeColumn,
-                .logicalSize: .logicalSizeColumn, .files: .filesColumn, .folders: .foldersColumn
+                .logicalSize: .logicalSizeColumn, .files: .filesColumn, .folders: .foldersColumn,
+                .modified: .modifiedColumn
             ]
             guard let identifier = identifierForKey[sortKey],
                   let column = outlineView.tableColumns.first(where: { $0.identifier == identifier }) else { return }
@@ -359,6 +403,8 @@ public struct FileTreeView: NSViewRepresentable {
             case .logicalSize: return numericCompare(a.logicalSize, b.logicalSize)
             case .files: return numericCompare(a.fileCount, b.fileCount)
             case .folders: return numericCompare(a.folderCount, b.folderCount)
+            case .modified:
+                return numericCompare(a.modificationDate ?? .distantPast, b.modificationDate ?? .distantPast)
             }
         }
 
@@ -415,4 +461,5 @@ private extension NSUserInterfaceItemIdentifier {
     static let logicalSizeColumn = NSUserInterfaceItemIdentifier("logicalSize")
     static let filesColumn = NSUserInterfaceItemIdentifier("files")
     static let foldersColumn = NSUserInterfaceItemIdentifier("folders")
+    static let modifiedColumn = NSUserInterfaceItemIdentifier("modified")
 }
