@@ -163,14 +163,19 @@ struct DirectoryScannerTests {
     }
 
     @Test("FolderSkipReason classifies errno (and, for EPERM, path) correctly", arguments: [
-        (EPERM, "/Users/sam/Library/Mail", FolderSkipReason.tccDenied),
-        (EPERM, "/private/var/db/Spotlight-V100", FolderSkipReason.systemProtected),
-        (EPERM, "/var/db/lockdown", FolderSkipReason.systemProtected),
-        (EACCES, "/Users/other/Documents", FolderSkipReason.accessDenied),
-        (ENOENT, "/some/path", FolderSkipReason.other(errno: ENOENT)),
+        (EPERM, "/Users/sam/Library/Mail", FolderSkipReason.tccDenied, "a user's own ~/Library is FDA territory"),
+        (EPERM, "/Users/sam/Library/Application Support/MobileSync", FolderSkipReason.tccDenied, "iOS backups live under ~/Library too"),
+        (EPERM, "/Users/otheruser/Library/Messages", FolderSkipReason.tccDenied, "FDA's own description covers all users on the Mac, not just the current one"),
+        (EPERM, "/Users/sam/Library/Keychains/576FDE0F-6E6F-55B1", FolderSkipReason.systemProtected, "Keychains are excluded from FDA's scope even though they live under ~/Library"),
+        (EPERM, "/private/var/db/Spotlight-V100", FolderSkipReason.systemProtected, "root-owned system daemon state"),
+        (EPERM, "/var/db/lockdown", FolderSkipReason.systemProtected, "root-owned system daemon state, /var form"),
+        (EPERM, "/Library/Caches/com.apple.aneuserd", FolderSkipReason.systemProtected, "top-level /Library is root-owned system data, not a user's ~/Library"),
+        (EPERM, "/System/Library/AssetsV2/com_apple_MobileAsset_UAF_FM_Visual", FolderSkipReason.systemProtected, "SIP-protected OS content"),
+        (EACCES, "/Users/other/Documents", FolderSkipReason.accessDenied, "plain Unix permission bit, not TCC"),
+        (ENOENT, "/some/path", FolderSkipReason.other(errno: ENOENT), "unrelated errno falls through to .other"),
     ])
-    func folderSkipReasonClassifiesErrno(errno: Int32, path: String, expected: FolderSkipReason) {
-        #expect(FolderSkipReason(errno: errno, path: path) == expected)
+    func folderSkipReasonClassifiesErrno(errno: Int32, path: String, expected: FolderSkipReason, comment: String) {
+        #expect(FolderSkipReason(errno: errno, path: path) == expected, "\(comment)")
     }
 
     @Test("ioThrottled option still produces a correct scan")

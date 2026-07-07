@@ -13,21 +13,28 @@ import Foundation
 /// doesn't apply.
 ///
 /// `EPERM` alone is not sufficient, though — confirmed on a real machine
-/// with Full Disk Access genuinely granted and working (verified: previously
-/// FDA-blocked folders like `~/Library/Application Support/MobileSync`
-/// became readable): every *remaining* `EPERM` was under `/private/var/db/`
-/// — root-owned system daemon databases (Spotlight's index internals,
-/// syslog, network daemon state, panic dumps, `lockdown`, etc.), not user
-/// files. No permission grant, not even Full Disk Access, not even root,
-/// unlocks these — so lumping them in with `.tccDenied` made the app nag
-/// to grant a permission that was already granted and had already done
-/// everything it could.
+/// with Full Disk Access genuinely granted and working (verified:
+/// previously-blocked folders like `~/Library/Application
+/// Support/MobileSync` became readable). Two rounds of live diagnosis
+/// turned up EPERM paths that FDA does NOT unlock, in growing variety:
+/// root-owned system daemon state (`/private/var/db/*` — Spotlight
+/// internals, syslog, `lockdown`), top-level system caches
+/// (`/Library/Caches/com.apple.*`), SIP-protected OS content
+/// (`/System/Library/AssetsV2/*`), and Keychain database files
+/// (`~/Library/Keychains/*` — excluded from FDA's scope by Apple's own
+/// design; those need the Keychain Services API, not raw file access).
+/// Chasing each new prefix individually doesn't converge, so this
+/// classifies by an allowlist instead: the only EPERM territory Full Disk
+/// Access actually unlocks is a user's own `~/Library` (any user, since
+/// FDA's own description says "for all users on this Mac"), Keychains
+/// excepted. Everything else that returns EPERM — however it's phrased —
+/// is `.systemProtected`, structurally unfixable by any permission grant.
 public enum FolderSkipReason: Sendable, Equatable {
     /// Blocked by TCC privacy protection — granting Full Disk Access may
     /// resolve this on a rescan.
     case tccDenied
-    /// `EPERM` under a root-owned system path (`/private/var/db` and
-    /// similar) — structurally unfixable by any permission grant.
+    /// `EPERM` outside a user's own `~/Library` (or inside `Keychains`) —
+    /// structurally unfixable by any permission grant, FDA included.
     case systemProtected
     /// A plain Unix permission bit denied the read (e.g. another user's
     /// files) — Full Disk Access does not change this.
@@ -37,14 +44,19 @@ public enum FolderSkipReason: Sendable, Equatable {
 
     public init(errno: Int32, path: String) {
         switch errno {
-        case EPERM: self = Self.isSystemProtectedPath(path) ? .systemProtected : .tccDenied
+        case EPERM: self = Self.isUserLibraryPath(path) ? .tccDenied : .systemProtected
         case EACCES: self = .accessDenied
         default: self = .other(errno: errno)
         }
     }
 
-    private static func isSystemProtectedPath(_ path: String) -> Bool {
-        path.hasPrefix("/private/var/") || path.hasPrefix("/var/")
+    /// Matches `/Users/<anyone>/Library/...` but excludes `Keychains`
+    /// specifically — the one subfolder there FDA doesn't reach.
+    private static func isUserLibraryPath(_ path: String) -> Bool {
+        guard path.range(of: #"^/Users/[^/]+/Library/"#, options: .regularExpression) != nil else {
+            return false
+        }
+        return !path.contains("/Library/Keychains/")
     }
 }
 
