@@ -47,4 +47,18 @@ struct FileCategorizerTests {
     func trailingDotIsNoExtension() {
         #expect(FileCategorizer.category(forFileName: "name.") == .noExtension)
     }
+
+    @Test(
+        "fileExtension(forFileName:) canonicalizes every jpg/JPG/jpeg/JPEG spelling to \"jpeg\", so they group as one",
+        arguments: ["photo.jpg", "photo.JPG", "photo.jpeg", "photo.JPEG", "photo.Jpg", "photo.JpEg"]
+    )
+    func jpgAndJpegCanonicalizeToJpeg(name: String) {
+        #expect(FileCategorizer.fileExtension(forFileName: name) == "jpeg")
+    }
+
+    @Test("the jpg/jpeg canonicalization is specific to that pair — an unrelated extension passes through unchanged")
+    func canonicalizationDoesNotAffectOtherExtensions() {
+        #expect(FileCategorizer.fileExtension(forFileName: "photo.png") == "png")
+        #expect(FileCategorizer.fileExtension(forFileName: "photo.PNG") == "png")
+    }
 }

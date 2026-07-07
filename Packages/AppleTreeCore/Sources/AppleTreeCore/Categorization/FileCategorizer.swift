@@ -10,9 +10,24 @@ public enum FileCategorizer {
     /// extensionless name. Exposed publicly so presentation layers can build
     /// finer-grained groupings (e.g. per-extension treemap colors) than the
     /// coarse `FileCategory` buckets without duplicating the dot-parsing rules.
+    ///
+    /// Canonicalizes same-format spelling variants that `extractExtension`'s
+    /// plain lowercasing doesn't collapse on its own — currently just
+    /// `jpg`/`jpeg` (`.JPG`, `.jpg`, `.JPEG`, and `.jpeg` all become
+    /// `"jpeg"`), so the extension breakdown shows one combined row instead
+    /// of splitting the same format across two. Deliberately not folded into
+    /// `extractExtension` itself: `category(forFileName:)` (the coarse
+    /// image/video/audio/... bucket) doesn't need or want this — `jpg` and
+    /// `jpeg` already map to the same `.image` category either way, and
+    /// keeping `extractExtension` a literal "what's after the last dot"
+    /// primitive avoids baking presentation-only aliasing into the one
+    /// parsing function every extension consumer shares.
     public static func fileExtension(forFileName name: String) -> String? {
-        extractExtension(from: name)
+        guard let ext = extractExtension(from: name) else { return nil }
+        return extensionAliases[ext] ?? ext
     }
+
+    private static let extensionAliases: [String: String] = ["jpg": "jpeg"]
 
     /// The substring after the *last* dot, lowercased — but only when that
     /// dot is neither the first character (a dotfile like `.gitignore` has

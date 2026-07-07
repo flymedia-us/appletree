@@ -6,7 +6,7 @@ public enum FileTypeNaming {
     public static let noExtensionLabel = "(No Extension)"
 
     private static let names: [String: String] = [
-        "jpg": "JPEG Image", "jpeg": "JPEG Image", "png": "PNG Image", "gif": "GIF Image",
+        "jpeg": "JPEG Image", "png": "PNG Image", "gif": "GIF Image",
         "heic": "HEIC Image", "heif": "HEIF Image", "webp": "WebP Image", "bmp": "BMP Image",
         "svg": "SVG Image", "tif": "TIFF Image", "tiff": "TIFF Image", "psd": "Photoshop Document",
         "ai": "Illustrator Document", "raw": "Camera Raw Image", "ico": "Icon Image",

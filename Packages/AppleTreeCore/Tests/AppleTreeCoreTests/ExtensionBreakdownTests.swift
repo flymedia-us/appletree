@@ -33,8 +33,28 @@ struct ExtensionBreakdownTests {
         #expect(summaries[0].totalSize == 150)
         #expect(summaries[0].fileCount == 2)
         #expect(summaries[0].fileTypeName == "MP4 File")
-        #expect(summaries[1].fileExtension == "jpg")
+        // "photo.jpg" canonicalizes to the "jpeg" bucket — see
+        // `jpgAndJpegFilesShareOneRow` below.
+        #expect(summaries[1].fileExtension == "jpeg")
         #expect(summaries[2].fileExtension == "txt")
+    }
+
+    @Test("jpg, JPG, jpeg, and JPEG files all aggregate into one combined \"jpeg\" row, not split across two")
+    func jpgAndJpegFilesShareOneRow() {
+        let root = makeDirectory(name: "root", children: [
+            makeFile(name: "a.jpg", size: 100),
+            makeFile(name: "b.JPG", size: 50),
+            makeFile(name: "c.jpeg", size: 20),
+            makeFile(name: "d.JPEG", size: 10)
+        ])
+
+        let summaries = ExtensionBreakdown.compute(for: root)
+
+        #expect(summaries.count == 1)
+        #expect(summaries[0].fileExtension == "jpeg")
+        #expect(summaries[0].fileTypeName == "JPEG Image")
+        #expect(summaries[0].totalSize == 180)
+        #expect(summaries[0].fileCount == 4)
     }
 
     @Test("extensionless files are grouped under a nil-extension (No Extension) row, not dropped")
