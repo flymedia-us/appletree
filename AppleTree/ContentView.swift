@@ -13,6 +13,7 @@ struct ContentView: View {
             if appState.shouldShowPermissionNudge {
                 PermissionNudgeBanner(
                     deniedFolderCount: appState.tccDeniedFolders,
+                    skippedFolderSample: appState.skippedFolderSample,
                     onDismiss: appState.dismissPermissionNudge,
                     onDismissPermanently: appState.dismissPermissionNudgePermanently
                 )

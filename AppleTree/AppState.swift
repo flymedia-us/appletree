@@ -2,6 +2,12 @@ import AppleTreeCore
 import AppleTreeUI
 import Foundation
 
+struct SkippedFolder: Identifiable {
+    let id = UUID()
+    let path: String
+    let reason: FolderSkipReason
+}
+
 @Observable
 @MainActor
 final class AppState {
@@ -17,6 +23,13 @@ final class AppState {
     private(set) var errorMessage: String?
     private(set) var isPermissionNudgeDismissed = false
     private(set) var volumeInfo: VolumeInfo?
+
+    /// A bounded sample of folders skipped specifically for `.tccDenied` —
+    /// i.e. the ones Full Disk Access could plausibly fix — for diagnosing
+    /// exactly what's still inaccessible. Capped so a scan with thousands
+    /// of skips doesn't grow this array unboundedly.
+    private(set) var skippedFolderSample: [SkippedFolder] = []
+    private static let skippedFolderSampleCap = 200
 
     /// True for the brief window between the scanner finishing its
     /// filesystem walk (`.finished`) and the Tree View/treemap actually
@@ -76,6 +89,7 @@ final class AppState {
         errorMessage = nil
         isPermissionNudgeDismissed = false
         volumeInfo = VolumeInfo.forVolume(containing: root)
+        skippedFolderSample = []
         selection.selectedNodeID = nil
 
         let scanner = DirectoryScanner()
@@ -115,9 +129,21 @@ final class AppState {
             bytesScanned = bytes
             currentPath = path
 
-        case .folderSkipped(_, let reason):
+        case .folderSkipped(let path, let reason):
             foldersSkipped += 1
-            if reason == .tccDenied { tccDeniedFolders += 1 }
+            // Only `.tccDenied` samples are kept — this list exists purely
+            // to answer "would Full Disk Access fix this?", and a real
+            // whole-disk scan can hit *thousands* of `.accessDenied` system
+            // files (mail queues, cups spool, network daemon state, each
+            // owned by its own service account) before ever reaching a
+            // user's `~/Library/Mail`. A single shared cap filled with
+            // those crowds out the one category this list is actually for.
+            if reason == .tccDenied {
+                tccDeniedFolders += 1
+                if skippedFolderSample.count < Self.skippedFolderSampleCap {
+                    skippedFolderSample.append(SkippedFolder(path: path, reason: reason))
+                }
+            }
 
         case .finished(let duration, let files, let skipped, let tccDenied):
             isScanning = false

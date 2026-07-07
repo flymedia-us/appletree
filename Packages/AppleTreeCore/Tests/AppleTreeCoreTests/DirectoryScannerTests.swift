@@ -162,13 +162,15 @@ struct DirectoryScannerTests {
         #expect(skipReason == .accessDenied, "a directory this process's own chmod blocked is a plain Unix permission denial (EACCES), not TCC (EPERM) — must not be misclassified as Full-Disk-Access-recoverable")
     }
 
-    @Test("FolderSkipReason classifies errno correctly", arguments: [
-        (EPERM, FolderSkipReason.tccDenied),
-        (EACCES, FolderSkipReason.accessDenied),
-        (ENOENT, FolderSkipReason.other(errno: ENOENT)),
+    @Test("FolderSkipReason classifies errno (and, for EPERM, path) correctly", arguments: [
+        (EPERM, "/Users/sam/Library/Mail", FolderSkipReason.tccDenied),
+        (EPERM, "/private/var/db/Spotlight-V100", FolderSkipReason.systemProtected),
+        (EPERM, "/var/db/lockdown", FolderSkipReason.systemProtected),
+        (EACCES, "/Users/other/Documents", FolderSkipReason.accessDenied),
+        (ENOENT, "/some/path", FolderSkipReason.other(errno: ENOENT)),
     ])
-    func folderSkipReasonClassifiesErrno(errno: Int32, expected: FolderSkipReason) {
-        #expect(FolderSkipReason(errno: errno) == expected)
+    func folderSkipReasonClassifiesErrno(errno: Int32, path: String, expected: FolderSkipReason) {
+        #expect(FolderSkipReason(errno: errno, path: path) == expected)
     }
 
     @Test("ioThrottled option still produces a correct scan")

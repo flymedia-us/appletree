@@ -1,6 +1,7 @@
 import Foundation
 
-/// Why a folder was skipped, classified from the syscall's `errno`.
+/// Why a folder was skipped, classified from the syscall's `errno` (and,
+/// for `EPERM`, the path itself).
 ///
 /// macOS surfaces a TCC-denied open (a path blocked by a *privacy*
 /// protection — Full Disk Access territory, e.g. `~/Library/Mail`) as
@@ -10,22 +11,40 @@ import Foundation
 /// granting Full Disk Access, the latter cannot — so collapsing them into
 /// one "permission denied" bucket would make the app recommend a fix that
 /// doesn't apply.
+///
+/// `EPERM` alone is not sufficient, though — confirmed on a real machine
+/// with Full Disk Access genuinely granted and working (verified: previously
+/// FDA-blocked folders like `~/Library/Application Support/MobileSync`
+/// became readable): every *remaining* `EPERM` was under `/private/var/db/`
+/// — root-owned system daemon databases (Spotlight's index internals,
+/// syslog, network daemon state, panic dumps, `lockdown`, etc.), not user
+/// files. No permission grant, not even Full Disk Access, not even root,
+/// unlocks these — so lumping them in with `.tccDenied` made the app nag
+/// to grant a permission that was already granted and had already done
+/// everything it could.
 public enum FolderSkipReason: Sendable, Equatable {
     /// Blocked by TCC privacy protection — granting Full Disk Access may
     /// resolve this on a rescan.
     case tccDenied
+    /// `EPERM` under a root-owned system path (`/private/var/db` and
+    /// similar) — structurally unfixable by any permission grant.
+    case systemProtected
     /// A plain Unix permission bit denied the read (e.g. another user's
     /// files) — Full Disk Access does not change this.
     case accessDenied
     /// Any other errno (stale mount, I/O error, etc).
     case other(errno: Int32)
 
-    public init(errno: Int32) {
+    public init(errno: Int32, path: String) {
         switch errno {
-        case EPERM: self = .tccDenied
+        case EPERM: self = Self.isSystemProtectedPath(path) ? .systemProtected : .tccDenied
         case EACCES: self = .accessDenied
         default: self = .other(errno: errno)
         }
+    }
+
+    private static func isSystemProtectedPath(_ path: String) -> Bool {
+        path.hasPrefix("/private/var/") || path.hasPrefix("/var/")
     }
 }
 
