@@ -24,12 +24,26 @@ public struct FileTreeView: NSViewRepresentable {
     /// scanning→idle transition — see `updateNSView`'s doc comment on why
     /// that moment (and only that moment) needs a full reload.
     public var isScanning: Bool
+    /// Nodes a live filesystem watch has found gone since the scan completed
+    /// — deleted, or moved out from under their scanned path, by Finder,
+    /// Terminal, or any other process outside this app. Rendered with the
+    /// same red-strikethrough treatment as an in-app Trash action (see
+    /// `Coordinator.deletedNodeIDs`), just sourced from outside instead of
+    /// from this view's own Delete action.
+    public var externallyDeletedNodeIDs: Set<FileNode.ID>
 
-    public init(rootNode: FileNode?, selection: SelectionModel, treeVersion: Int, isScanning: Bool) {
+    public init(
+        rootNode: FileNode?,
+        selection: SelectionModel,
+        treeVersion: Int,
+        isScanning: Bool,
+        externallyDeletedNodeIDs: Set<FileNode.ID> = []
+    ) {
         self.rootNode = rootNode
         self.selection = selection
         self.treeVersion = treeVersion
         self.isScanning = isScanning
+        self.externallyDeletedNodeIDs = externallyDeletedNodeIDs
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
@@ -134,6 +148,20 @@ public struct FileTreeView: NSViewRepresentable {
         if isNewRoot {
             coordinator.rootNode = rootNode
             coordinator.deletedNodeIDs.removeAll()
+            coordinator.externallyDeletedNodeIDs = []
+            coordinator.lastExternallyDeletedNodeIDs = []
+        } else if coordinator.lastExternallyDeletedNodeIDs != externallyDeletedNodeIDs {
+            // Only the rows whose deleted-status actually flipped need a
+            // reload — not a full `reloadData()`, which would also reset
+            // scroll position and any in-progress editing/selection UI.
+            let changedIDs = coordinator.lastExternallyDeletedNodeIDs.symmetricDifference(externallyDeletedNodeIDs)
+            coordinator.externallyDeletedNodeIDs = externallyDeletedNodeIDs
+            coordinator.lastExternallyDeletedNodeIDs = externallyDeletedNodeIDs
+            for id in changedIDs {
+                if let node = coordinator.findNode(withID: id, in: rootNode) {
+                    outlineView.reloadItem(node)
+                }
+            }
         }
 
         // A directory's size is only final once *its own* `finalizeAsDirectory()`
@@ -219,6 +247,13 @@ public struct FileTreeView: NSViewRepresentable {
         /// root changes (a fresh scan has nothing to mark deleted).
         var deletedNodeIDs: Set<FileNode.ID> = []
 
+        /// Mirrors `FileTreeView.externallyDeletedNodeIDs` — nodes a live
+        /// filesystem watch found gone, from outside this app. `updateNSView`
+        /// keeps this in sync and reloads exactly the rows that changed;
+        /// `lastExternallyDeletedNodeIDs` is what that diff is against.
+        var externallyDeletedNodeIDs: Set<FileNode.ID> = []
+        var lastExternallyDeletedNodeIDs: Set<FileNode.ID> = []
+
         init(selection: SelectionModel) {
             self.selection = selection
         }
@@ -256,7 +291,7 @@ public struct FileTreeView: NSViewRepresentable {
 
         public func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
             guard let node = item as? FileNode, let columnID = tableColumn?.identifier else { return nil }
-            let isDeleted = deletedNodeIDs.contains(node.id)
+            let isDeleted = deletedNodeIDs.contains(node.id) || externallyDeletedNodeIDs.contains(node.id)
 
             switch columnID {
             case .folderColumn:
@@ -570,7 +605,7 @@ public struct FileTreeView: NSViewRepresentable {
             outlineView.scrollRowToVisible(row)
         }
 
-        private func findNode(withID id: FileNode.ID, in node: FileNode?) -> FileNode? {
+        fileprivate func findNode(withID id: FileNode.ID, in node: FileNode?) -> FileNode? {
             guard let node else { return nil }
             if node.id == id { return node }
             for child in node.children {

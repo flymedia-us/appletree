@@ -31,6 +31,17 @@ final class AppState {
     private(set) var skippedFolderSample: [SkippedFolder] = []
     private static let skippedFolderSampleCap = 200
 
+    /// Paths scanned into the current tree that a live filesystem watch has
+    /// since found gone (deleted, or moved out from under their scanned
+    /// path — e.g. dragged to the Trash — from Finder, Terminal, or any
+    /// other process, not this app's own Delete action). Watching starts
+    /// once a scan finishes — see `startWatchingForExternalChanges` — so
+    /// this stays empty for the scan's own duration and resets on the next
+    /// scan. Kept separate from `FileTreeView`'s own `deletedNodeIDs` (which
+    /// tracks in-app Trash actions): this is core scan state, that's
+    /// UI-only presentation bookkeeping.
+    private(set) var externallyDeletedNodeIDs: Set<FileNode.ID> = []
+
     /// True for the brief window between the scanner finishing its
     /// filesystem walk (`.finished`) and the Tree View/treemap actually
     /// rendering that result — approximated as "one main-thread run-loop
@@ -73,8 +84,13 @@ final class AppState {
     private var scanTask: Task<Void, Never>?
     private var lastGenerationBump: ContinuousClock.Instant = .now
 
+    private var scanRootURL: URL?
+    private var changeWatcher: ExternalChangeWatcher?
+    private var changeWatchTask: Task<Void, Never>?
+
     func startScan(root: URL) {
         scanTask?.cancel()
+        stopWatchingForExternalChanges()
 
         rootNode = nil
         isScanning = true
@@ -90,8 +106,10 @@ final class AppState {
         isPermissionNudgeDismissed = false
         volumeInfo = VolumeInfo.forVolume(containing: root)
         skippedFolderSample = []
+        externallyDeletedNodeIDs = []
         selection.selectedNodeID = nil
 
+        scanRootURL = root
         let scanner = DirectoryScanner()
         scanTask = Task { [weak self] in
             guard let self else { return }
@@ -108,6 +126,42 @@ final class AppState {
     func cancelScan() {
         scanTask?.cancel()
         isScanning = false
+    }
+
+    /// Starts (or restarts) a live watch for changes made to the just-scanned
+    /// tree from outside the app. Called once the scan finishes — watching
+    /// mid-scan would just be racing the scanner's own writes, and every
+    /// path it would report is already covered by the scan itself.
+    private func startWatchingForExternalChanges() {
+        stopWatchingForExternalChanges()
+        guard let scanRootURL else { return }
+
+        let (stream, watcher) = ExternalChangeWatcher.watch(root: scanRootURL)
+        changeWatcher = watcher
+        changeWatchTask = Task { [weak self] in
+            for await changes in stream {
+                self?.applyExternalChanges(changes)
+            }
+        }
+    }
+
+    private func stopWatchingForExternalChanges() {
+        changeWatchTask?.cancel()
+        changeWatchTask = nil
+        changeWatcher?.stop()
+        changeWatcher = nil
+    }
+
+    private func applyExternalChanges(_ changes: [ExternalChangeWatcher.PathChange]) {
+        guard let rootNode else { return }
+        for change in changes {
+            guard let node = rootNode.descendant(atPath: change.path) else { continue }
+            if change.stillExists {
+                externallyDeletedNodeIDs.remove(node.id)
+            } else {
+                externallyDeletedNodeIDs.insert(node.id)
+            }
+        }
     }
 
     private func handle(_ event: ScanEvent) {
@@ -154,6 +208,7 @@ final class AppState {
             lastScanDuration = duration
             currentPath = nil
             bumpGeneration(force: true)
+            startWatchingForExternalChanges()
             // Schedules the flip back to "Scan completed" for the run loop
             // tick right after this one — see `isLoadingTree`'s doc comment.
             DispatchQueue.main.async { [weak self] in

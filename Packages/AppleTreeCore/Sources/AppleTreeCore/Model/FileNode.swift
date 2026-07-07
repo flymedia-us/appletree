@@ -138,6 +138,36 @@ public final class FileNode: @unchecked Sendable {
         guard let parent, parent.displaySize > 0 else { return 1.0 }
         return Double(displaySize) / Double(parent.displaySize)
     }
+
+    /// Resolves an absolute path to the node representing it within this
+    /// subtree, by descending through `children` by name at each path
+    /// component — not a precomputed path index, so it needs no invalidation
+    /// as the scanner mutates the tree, and stays correct across renames of
+    /// the index-building kind that never happened. Intended for the rare
+    /// external-change-detection lookup (one path at a time), not a hot path.
+    ///
+    /// `nil` if `path` isn't `self.path` or a descendant of it, or if any
+    /// component along the way no longer matches a child's name (e.g. it was
+    /// itself renamed/deleted since the scan).
+    public func descendant(atPath path: String) -> FileNode? {
+        let base = self.path
+        if path == base { return self }
+
+        // A volume-root scan's `path` is already "/" — appending another
+        // "/" would require every real path to start with "//", which none
+        // do, silently failing to resolve *any* path under a whole-volume
+        // scan. Only append the separator when `base` doesn't already end
+        // in one.
+        let prefix = base.hasSuffix("/") ? base : base + "/"
+        guard path.hasPrefix(prefix) else { return nil }
+
+        var current = self
+        for component in path.dropFirst(prefix.count).split(separator: "/") {
+            guard let next = current.children.first(where: { $0.name == component }) else { return nil }
+            current = next
+        }
+        return current
+    }
 }
 
 extension FileNode: Identifiable {

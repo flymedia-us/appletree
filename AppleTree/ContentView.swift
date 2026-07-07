@@ -22,7 +22,13 @@ struct ContentView: View {
             }
             VSplitView {
                 HSplitView {
-                    FileTreeView(rootNode: appState.rootNode, selection: appState.selection, treeVersion: appState.scanGeneration, isScanning: appState.isScanning)
+                    FileTreeView(
+                        rootNode: appState.rootNode,
+                        selection: appState.selection,
+                        treeVersion: appState.scanGeneration,
+                        isScanning: appState.isScanning,
+                        externallyDeletedNodeIDs: appState.externallyDeletedNodeIDs
+                    )
                         .frame(minWidth: 320)
                         // `HSplitView` doesn't expose a percentage-based
                         // initial-size API (and ignores `idealWidth` as a

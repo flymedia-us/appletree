@@ -70,4 +70,48 @@ struct FileNodeTests {
         #expect(a.id == a.id)
         #expect(a.id != b.id)
     }
+
+    @Test("descendant(atPath:) resolves the root itself, a nested child, and rejects unrelated/unknown paths")
+    func descendantAtPath() {
+        let root = FileNode(name: "root", isDirectory: true, rootPath: "/scan/root")
+        let mid = FileNode(name: "mid", isDirectory: true)
+        let leaf = FileNode(name: "leaf.txt", isDirectory: false)
+        root.addChild(mid)
+        mid.addChild(leaf)
+
+        #expect(root.descendant(atPath: "/scan/root") === root)
+        #expect(root.descendant(atPath: "/scan/root/mid") === mid)
+        #expect(root.descendant(atPath: "/scan/root/mid/leaf.txt") === leaf)
+
+        // A sibling prefix that merely starts the same isn't actually under
+        // the root (e.g. "/scan/root-backup" must not match "/scan/root").
+        #expect(root.descendant(atPath: "/scan/root-backup/mid") == nil)
+        // A path that never existed in the tree.
+        #expect(root.descendant(atPath: "/scan/root/mid/nonexistent.txt") == nil)
+        #expect(root.descendant(atPath: "/somewhere/else") == nil)
+    }
+
+    @Test("descendant(atPath:) resolves paths under a volume-root scan, whose own path is already \"/\"")
+    func descendantAtPathForVolumeRootScan() {
+        // Regression test: a whole-volume scan's root node has `path == "/"`
+        // — naively appending a separator before matching produces "//",
+        // which no real absolute path starts with, so *every* lookup failed
+        // silently. Confirmed live: AppleTree never flagged an externally
+        // deleted file when the scan root was "Macintosh HD" (i.e. "/"),
+        // only reproduced once the scan root was the actual volume root
+        // rather than a subfolder.
+        let root = FileNode(name: "Macintosh HD", isDirectory: true, rootPath: "/")
+        let users = FileNode(name: "Users", isDirectory: true)
+        let home = FileNode(name: "samfriedman", isDirectory: true)
+        let downloads = FileNode(name: "Downloads", isDirectory: true)
+        let file = FileNode(name: "Untitled copy.rtf", isDirectory: false)
+        root.addChild(users)
+        users.addChild(home)
+        home.addChild(downloads)
+        downloads.addChild(file)
+
+        #expect(root.path == "/")
+        #expect(root.descendant(atPath: "/Users/samfriedman/Downloads/Untitled copy.rtf") === file)
+        #expect(root.descendant(atPath: "/Users/samfriedman/Downloads") === downloads)
+    }
 }
