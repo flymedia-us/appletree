@@ -7,7 +7,7 @@ import Foundation
 /// Not part of the app; not covered by unit tests.
 ///
 /// Usage:
-///   swift run scanbench [path]                    — full recursive scan (default: home directory)
+///   swift run scanbench [path] [--workers N]       — full recursive scan (default: home directory)
 ///   swift run scanbench --bulkbench <dir> [iters]  — single-directory fts vs getattrlistbulk benchmark
 
 if CommandLine.arguments.count > 1, CommandLine.arguments[1] == "--bulkbench" {
@@ -19,7 +19,19 @@ if CommandLine.arguments.count > 1, CommandLine.arguments[1] == "--bulkbench" {
     let iterations = CommandLine.arguments.count > 3 ? Int(CommandLine.arguments[3]) ?? 20 : 20
     runBulkBench(path: path, iterations: iterations)
 } else {
-    await runFullScan()
+    var path: String?
+    var workers: Int?
+    var args = Array(CommandLine.arguments.dropFirst())[...]
+    while let arg = args.first {
+        args = args.dropFirst()
+        if arg == "--workers", let value = args.first {
+            workers = Int(value)
+            args = args.dropFirst()
+        } else if path == nil {
+            path = arg
+        }
+    }
+    await runFullScan(path: path, workers: workers)
 }
 
 /// Non-recursive single-directory enumeration via `fts`, reading name + type
@@ -94,15 +106,14 @@ func runBulkBench(path: String, iterations: Int) {
     }
 }
 
-func runFullScan() async {
-    let targetPath = CommandLine.arguments.count > 1
-        ? CommandLine.arguments[1]
-        : FileManager.default.homeDirectoryForCurrentUser.path
+func runFullScan(path: String? = nil, workers: Int? = nil) async {
+    let targetPath = path ?? FileManager.default.homeDirectoryForCurrentUser.path
     let root = URL(fileURLWithPath: targetPath)
 
-    print("Scanning \(root.path) ...")
+    print("Scanning \(root.path)\(workers.map { " (maxConcurrentWorkers: \($0))" } ?? " (default worker count)") ...")
 
     let scanner = DirectoryScanner()
+    let options = ScanOptions(maxConcurrentWorkers: workers)
     var totalFiles = 0
     var totalSkipped = 0
     var totalTccDenied = 0
@@ -110,7 +121,7 @@ func runFullScan() async {
     var rootNode: FileNode?
 
     do {
-        for try await event in await scanner.scan(root: root) {
+        for try await event in await scanner.scan(root: root, options: options) {
             switch event {
             case .rootCreated(let node):
                 rootNode = node

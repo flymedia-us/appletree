@@ -234,6 +234,48 @@ struct DirectoryScannerTests {
         )
     }
 
+    /// Regression test for a correctness risk introduced by reading names
+    /// straight out of `fts_path`'s raw bytes (via `fts_pathlen`/
+    /// `fts_namelen`) instead of `NSString.lastPathComponent`, as a
+    /// performance fix for the per-entry hot path: `fts_namelen` is a
+    /// *byte* count, and slicing a Swift `String` by anything other than
+    /// byte count (e.g. `String.suffix(_:)`, which counts grapheme
+    /// clusters) would silently mis-slice any multi-byte name — so the
+    /// actual fix reads the name from the raw C buffer via `String(cString:)`
+    /// instead, which decodes UTF-8 correctly regardless. Covers emoji
+    /// (multi-scalar grapheme clusters), accented Latin (APFS may store
+    /// these NFD-normalized on disk, different bytes than written — Swift's
+    /// `String ==` is canonically-equivalence-aware, so this doesn't need
+    /// special-casing), and CJK (every byte is part of a multi-byte
+    /// sequence, no ASCII fallback to accidentally paper over a bug).
+    @Test("names with multi-byte UTF-8 characters (emoji, accents, CJK) are read correctly for both files and directories")
+    func nonASCIINamesReadCorrectly() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("appletree-utf8-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let names = ["🎉party.txt", "café.txt", "日本語ファイル.txt", "Ünïcödé Dir"]
+        for name in names {
+            let url = root.appendingPathComponent(name, isDirectory: name.hasSuffix("Dir"))
+            if name.hasSuffix("Dir") {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            } else {
+                try Data([0x01]).write(to: url)
+            }
+        }
+
+        let scanner = DirectoryScanner()
+        var rootNode: FileNode?
+        for try await event in await scanner.scan(root: root) {
+            if case .rootCreated(let node) = event { rootNode = node }
+        }
+
+        let node = try #require(rootNode)
+        let scannedNames = Set(node.children.map(\.name))
+        #expect(scannedNames == Set(names), "every multi-byte name must round-trip exactly, not just its ASCII portion")
+    }
+
     @Test("FolderSkipReason classifies errno (and, for EPERM, path) correctly", arguments: [
         (EPERM, "/Users/sam/Library/Mail", FolderSkipReason.tccDenied, "a user's own ~/Library is FDA territory"),
         (EPERM, "/Users/sam/Library/Application Support/MobileSync", FolderSkipReason.tccDenied, "iOS backups live under ~/Library too"),

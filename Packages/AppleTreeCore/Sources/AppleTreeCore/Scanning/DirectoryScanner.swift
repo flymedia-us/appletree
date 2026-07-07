@@ -256,7 +256,7 @@ public actor DirectoryScanner {
                     }
 
                     let fullPath = String(cString: entp.pointee.fts_path)
-                    let name = (fullPath as NSString).lastPathComponent
+                    let name = entryName(entp)
                     let childNode = FileNode(
                         name: name,
                         isDirectory: true,
@@ -306,7 +306,7 @@ public actor DirectoryScanner {
                 case FTS_F, FTS_DEFAULT, FTS_SL, FTS_SLNONE:
                     guard let statp = entp.pointee.fts_statp else { continue }
                     let fullPath = String(cString: entp.pointee.fts_path)
-                    let name = (fullPath as NSString).lastPathComponent
+                    let name = entryName(entp)
                     let size = UInt64(statp.pointee.st_size)
                     let allocated = UInt64(statp.pointee.st_blocks) * 512
 
@@ -383,6 +383,22 @@ public actor DirectoryScanner {
         for finished in inlineFinalizedInOrder {
             finished.finalizeAsDirectory()
         }
+    }
+
+    /// The current fts entry's own file/directory name — the last
+    /// `fts_namelen` bytes of `fts_path`, exactly what BSD `fts`'s own
+    /// `fts_name` field holds (a flexible array member, awkward to address
+    /// directly from Swift, so this reads the identical bytes out of the
+    /// already-materialized `fts_path` buffer instead — `fts_path` is
+    /// always the root path with every path component including this
+    /// entry's own name appended, so its tail *is* the name). Avoids
+    /// re-deriving the name via `NSString.lastPathComponent` — an
+    /// Objective-C bridge plus a fresh scan for the last "/" — on what's
+    /// the hottest loop in the entire scan (once per file and directory).
+    private static func entryName(_ entp: UnsafeMutablePointer<FTSENT>) -> String {
+        let namelen = Int(entp.pointee.fts_namelen)
+        let pathlen = Int(entp.pointee.fts_pathlen)
+        return String(cString: entp.pointee.fts_path.advanced(by: pathlen - namelen))
     }
 
     private static func date(from ts: timespec) -> Date {
