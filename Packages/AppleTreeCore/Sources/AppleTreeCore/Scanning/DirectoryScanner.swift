@@ -91,6 +91,7 @@ public actor DirectoryScanner {
             await scanDirectory(
                 node: rootNode,
                 path: path,
+                rootDevice: rootStat.st_dev,
                 slots: slots,
                 counters: counters,
                 inodeTracker: inodeTracker,
@@ -117,6 +118,7 @@ public actor DirectoryScanner {
     private static func scanDirectory(
         node: FileNode,
         path: String,
+        rootDevice: dev_t,
         slots: WorkerSlotPool,
         counters: ScanCounters,
         inodeTracker: InodeTracker,
@@ -199,6 +201,36 @@ public actor DirectoryScanner {
                 case FTS_D:
                     if level == 0 { continue }
 
+                    let statp = entp.pointee.fts_statp
+
+                    // Stay on the volume the scan started on. `FTS_XDEV`
+                    // (passed to every `fts_open` below) can't enforce this
+                    // by itself: each spawned worker opens its *own* fts
+                    // session, which resets FTS_XDEV's "starting device" to
+                    // wherever that subtree happens to live. That reset is
+                    // actually load-bearing — a modern Mac's System and Data
+                    // volumes are joined by firmlinks but share one
+                    // synthesized `st_dev` (confirmed empirically: `stat("/")`
+                    // and `stat("/System/Volumes/Data")` return the identical
+                    // device), so without it a "Macintosh HD" scan could
+                    // never reach /Users, /Applications, or anything else
+                    // living on the Data volume. But it also means any
+                    // *genuinely* different device mounted anywhere in the
+                    // tree — an external drive under /Volumes, a
+                    // CoreSimulator disk image, /System/Volumes/VM — gets
+                    // scanned right along with it once handed to its own
+                    // worker. Confirmed live: scanning "Macintosh HD" also
+                    // scanned an entirely separate external Plex HDD mounted
+                    // at /Volumes/Plex Drive. Comparing every directory's own
+                    // `st_dev` against the *scan root's* device (captured
+                    // once, threaded through every recursive/spawned call
+                    // rather than re-derived per fts session) is the actual
+                    // "stays on one device" guarantee `ScanOptions` documents.
+                    if let statp, statp.pointee.st_dev != rootDevice {
+                        fts_set(ftsp, entp, FTS_SKIP)
+                        continue
+                    }
+
                     // Directory-level dedup: macOS composes the visible
                     // filesystem from multiple APFS volumes joined by
                     // firmlinks (e.g. /Users is a firmlink into the same
@@ -212,7 +244,6 @@ public actor DirectoryScanner {
                     // via a real scan: ~4TB counted twice, once under
                     // /System and again under /Users et al). Skip both the
                     // node creation and the descent for a repeat.
-                    let statp = entp.pointee.fts_statp
                     if let statp {
                         let isFirstVisit = inodeTracker.markSeenReturningIsFirst(
                             device: statp.pointee.st_dev,
@@ -239,6 +270,7 @@ public actor DirectoryScanner {
                             await scanDirectory(
                                 node: childNode,
                                 path: fullPath,
+                                rootDevice: rootDevice,
                                 slots: slots,
                                 counters: counters,
                                 inodeTracker: inodeTracker,

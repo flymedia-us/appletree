@@ -162,6 +162,78 @@ struct DirectoryScannerTests {
         #expect(skipReason == .accessDenied, "a directory this process's own chmod blocked is a plain Unix permission denial (EACCES), not TCC (EPERM) — must not be misclassified as Full-Disk-Access-recoverable")
     }
 
+    /// Runs `hdiutil` synchronously, throwing on a nonzero exit — used to
+    /// create/attach/detach a small disposable disk image as a stand-in for
+    /// "a genuinely separate mounted volume reachable under the scan root."
+    /// A `.dmg` is just a loopback-backed file, distinct from any of the
+    /// user's actual external disks — safe to create, mount, and destroy
+    /// entirely within this test.
+    private func runHdiutil(_ arguments: [String]) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            struct HdiutilFailed: Error, CustomStringConvertible { let description: String }
+            throw HdiutilFailed(description: "hdiutil \(arguments.joined(separator: " ")) failed: \(output)")
+        }
+    }
+
+    /// Regression test for a real bug found live: scanning "Macintosh HD"
+    /// also scanned an entirely unrelated external Plex HDD mounted under
+    /// /Volumes. Root cause — every subdirectory promoted to a spawned
+    /// worker opens its *own* `fts_open` session, which resets `FTS_XDEV`'s
+    /// "stay on one device" baseline to wherever that subtree happens to
+    /// live, silently defeating it for any real device boundary crossed
+    /// that way. A real external drive is impractical (and per the task,
+    /// off-limits) to touch in an automated test, so this mounts a small
+    /// disposable disk image *inside* the scan root instead — a genuinely
+    /// different `st_dev`, the exact mechanism the bug hinges on, without
+    /// touching any of the user's actual external disks.
+    @Test("a genuinely different volume mounted inside the scan root is not descended into")
+    func doesNotCrossOntoADifferentMountedVolume() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("appletree-xdev-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // A same-device file, to prove the fix isn't overzealous — it must
+        // still be counted normally.
+        try Data(repeating: 0, count: 10).write(to: root.appendingPathComponent("local.txt"))
+
+        let dmgPath = root.deletingLastPathComponent()
+            .appendingPathComponent("appletree-xdev-test-\(UUID().uuidString).dmg").path
+        let mountPoint = root.appendingPathComponent("other-volume", isDirectory: true)
+        try FileManager.default.createDirectory(at: mountPoint, withIntermediateDirectories: true)
+
+        try runHdiutil(["create", "-size", "5m", "-fs", "APFS", "-volname", "AppleTreeXDevTest", dmgPath])
+        defer { try? FileManager.default.removeItem(atPath: dmgPath) }
+        try runHdiutil(["attach", dmgPath, "-mountpoint", mountPoint.path, "-nobrowse"])
+        defer { try? runHdiutil(["detach", mountPoint.path, "-force"]) }
+
+        try Data(repeating: 0, count: 999).write(to: mountPoint.appendingPathComponent("should-not-be-scanned.bin"))
+
+        let scanner = DirectoryScanner()
+        var rootNode: FileNode?
+        for try await event in await scanner.scan(root: root) {
+            if case .rootCreated(let node) = event { rootNode = node }
+        }
+
+        let node = try #require(rootNode)
+        #expect(node.fileCount == 1, "only local.txt should be counted — the mounted volume's content must be excluded")
+        #expect(node.folderCount == 0, "the mount point itself doesn't count as a folder either — it's excluded outright, not shown empty")
+        #expect(node.logicalSize == 10, "the mounted volume's 999-byte file must not contribute to the scan's size")
+        #expect(
+            node.children.first { $0.name == "other-volume" } == nil,
+            "the mount point for a different device is excluded outright, not shown as an empty entry — a whole separate disk reading as \"an empty folder\" would be its own kind of confusing"
+        )
+    }
+
     @Test("FolderSkipReason classifies errno (and, for EPERM, path) correctly", arguments: [
         (EPERM, "/Users/sam/Library/Mail", FolderSkipReason.tccDenied, "a user's own ~/Library is FDA territory"),
         (EPERM, "/Users/sam/Library/Application Support/MobileSync", FolderSkipReason.tccDenied, "iOS backups live under ~/Library too"),

@@ -1,8 +1,12 @@
 import os
 
 /// Identifies a file uniquely for hardlink/APFS-clone dedup purposes. Inode
-/// numbers are only unique per-device, so both are needed even though a scan
-/// never crosses devices (`FTS_XDEV`) — defensive correctness costs nothing.
+/// numbers are only unique per-device, so both are needed — including on a
+/// single-volume scan, since a firmlinked directory (e.g. `/Users`) and its
+/// real backing path (`/System/Volumes/Data/Users`) share one `st_dev`
+/// (`DirectoryScanner`'s own device-boundary check treats them as the same
+/// volume, by design) but still need `device` to disambiguate their inode
+/// numbers from any other volume's.
 struct InodeKey: Hashable, Sendable {
     let device: Int32
     let inode: UInt64
