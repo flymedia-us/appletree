@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// A single file or directory discovered during a scan.
 ///
@@ -38,7 +39,25 @@ public final class FileNode: @unchecked Sendable {
     /// scanner and sorted descending by `displaySize` once the directory's
     /// scan completes (this ordering is relied on by both the Tree View's
     /// default sort and the treemap layout algorithm).
-    public internal(set) var children: [FileNode]
+    ///
+    /// Lock-protected rather than a plain stored property: unlike the scalar
+    /// aggregate fields below, this is a `[FileNode]`, and readers (the tree
+    /// view, treemap layout, extension breakdown) are explicitly allowed to
+    /// walk it mid-scan, concurrently with the scanner's own `addChild`
+    /// appends on other tasks. A plain `Array` races when one side appends
+    /// while another iterates — this crashed for real (out-of-bounds
+    /// subscript / corrupted `Dictionary` storage inside
+    /// `ExtensionBreakdown.compute`, ~15 threads deep in the same recursive
+    /// walk while `DirectoryScanner` was still appending to the very
+    /// subtrees being walked). Vending a copy under the lock is enough to
+    /// fix it: once a reader holds that second reference, the writer's next
+    /// `append` finds the buffer not uniquely referenced and copies instead
+    /// of mutating storage the reader might be iterating.
+    public var children: [FileNode] {
+        childrenLock.withLock { $0 }
+    }
+
+    private let childrenLock = OSAllocatedUnfairLock<[FileNode]>(initialState: [])
 
     public internal(set) var category: FileCategory
 
@@ -63,7 +82,6 @@ public final class FileNode: @unchecked Sendable {
         allocatedSize: UInt64 = 0,
         fileCount: Int = 0,
         folderCount: Int = 0,
-        children: [FileNode] = [],
         category: FileCategory = .noExtension,
         modificationDate: Date? = nil,
         rootPath: String? = nil,
@@ -75,7 +93,6 @@ public final class FileNode: @unchecked Sendable {
         self.allocatedSize = allocatedSize
         self.fileCount = fileCount
         self.folderCount = folderCount
-        self.children = children
         self.category = category
         self.modificationDate = modificationDate
         self.rootPath = rootPath
@@ -135,7 +152,7 @@ extension FileNode {
     /// counts on `self` — callers finalize those once all children are known.
     func addChild(_ child: FileNode) {
         child.parent = self
-        children.append(child)
+        childrenLock.withLock { $0.append(child) }
         if child.isDirectory {
             folderCount += 1
         } else {
@@ -147,13 +164,16 @@ extension FileNode {
     /// `children` and sorts `children` descending by `displaySize`. Called
     /// once a directory's immediate scan work is done.
     func finalizeAsDirectory() {
-        children.sort { $0.displaySize > $1.displaySize }
+        let sortedChildren = childrenLock.withLock { state -> [FileNode] in
+            state.sort { $0.displaySize > $1.displaySize }
+            return state
+        }
 
         var logical: UInt64 = 0
         var allocated: UInt64 = 0
         var files = 0
         var folders = 0
-        for child in children {
+        for child in sortedChildren {
             logical += child.logicalSize
             allocated += child.allocatedSize
             if child.isDirectory {
