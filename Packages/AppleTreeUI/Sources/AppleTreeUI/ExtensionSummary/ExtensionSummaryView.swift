@@ -19,10 +19,20 @@ public struct ExtensionSummaryView: NSViewRepresentable {
     /// rationale (this recompute is just as debounced/backgrounded, and can
     /// finish well after `treeVersion` itself changes).
     public var onRecomputeFinished: ((Int) -> Void)?
+    /// Resolved light/dark scheme. AppKit table views don't reliably redraw
+    /// alternating rows / headers when SwiftUI's color scheme flips, so a
+    /// change here triggers an appearance sync + `reloadData()`.
+    public var colorScheme: ColorScheme
 
-    public init(rootNode: FileNode?, treeVersion: Int, onRecomputeFinished: ((Int) -> Void)? = nil) {
+    public init(
+        rootNode: FileNode?,
+        treeVersion: Int,
+        colorScheme: ColorScheme = .light,
+        onRecomputeFinished: ((Int) -> Void)? = nil
+    ) {
         self.rootNode = rootNode
         self.treeVersion = treeVersion
+        self.colorScheme = colorScheme
         self.onRecomputeFinished = onRecomputeFinished
     }
 
@@ -110,6 +120,15 @@ public struct ExtensionSummaryView: NSViewRepresentable {
 
         coordinator.onRecomputeFinished = onRecomputeFinished
 
+        let appearanceChanged = coordinator.lastColorScheme != colorScheme
+        if appearanceChanged {
+            coordinator.lastColorScheme = colorScheme
+            let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
+            scrollView.appearance = appearance
+            tableView.appearance = appearance
+            tableView.reloadData()
+        }
+
         let isNewRoot = coordinator.rootNode !== rootNode
         coordinator.rootNode = rootNode
 
@@ -133,6 +152,7 @@ public struct ExtensionSummaryView: NSViewRepresentable {
     public final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         var rootNode: FileNode?
         var lastTreeVersion = -1
+        var lastColorScheme: ColorScheme?
         weak var tableView: NSTableView?
         var onRecomputeFinished: ((Int) -> Void)?
 

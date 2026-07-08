@@ -43,6 +43,10 @@ public struct FileTreeView: NSViewRepresentable {
     /// Surfaces Trash failures to the app chrome — Delete used to fail
     /// silently, leaving the row unchanged with no explanation.
     public var onDeleteFailed: ((Error) -> Void)?
+    /// Resolved light/dark scheme. AppKit outline views don't reliably
+    /// redraw alternating rows / headers when SwiftUI's color scheme flips,
+    /// so a change here triggers an appearance sync + `reloadData()`.
+    public var colorScheme: ColorScheme
 
     public init(
         rootNode: FileNode?,
@@ -51,6 +55,7 @@ public struct FileTreeView: NSViewRepresentable {
         isScanning: Bool,
         externallyDeletedNodeIDs: Set<FileNode.ID> = [],
         confirmBeforeDelete: Bool = true,
+        colorScheme: ColorScheme = .light,
         onTreeMutated: (() -> Void)? = nil,
         onDeleteFailed: ((Error) -> Void)? = nil
     ) {
@@ -60,6 +65,7 @@ public struct FileTreeView: NSViewRepresentable {
         self.isScanning = isScanning
         self.externallyDeletedNodeIDs = externallyDeletedNodeIDs
         self.confirmBeforeDelete = confirmBeforeDelete
+        self.colorScheme = colorScheme
         self.onTreeMutated = onTreeMutated
         self.onDeleteFailed = onDeleteFailed
     }
@@ -166,6 +172,21 @@ public struct FileTreeView: NSViewRepresentable {
         coordinator.onDeleteFailed = onDeleteFailed
         coordinator.confirmBeforeDelete = confirmBeforeDelete
 
+        let appearanceChanged = coordinator.lastColorScheme != colorScheme
+        if appearanceChanged {
+            coordinator.lastColorScheme = colorScheme
+            let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
+            scrollView.appearance = appearance
+            outlineView.appearance = appearance
+            // Alternating-row backgrounds, headers, and recycled cells keep
+            // resolving `NSColor` against the previous appearance until a
+            // full reload forces them to redraw under the new one.
+            outlineView.reloadData()
+            if let rootNode, outlineView.numberOfRows > 0 {
+                outlineView.expandItem(rootNode)
+            }
+        }
+
         let isNewRoot = coordinator.rootNode !== rootNode
         if isNewRoot {
             coordinator.rootNode = rootNode
@@ -229,7 +250,7 @@ public struct FileTreeView: NSViewRepresentable {
                     // `reloadItem` branch below).
                     outlineView.reloadData()
                     coordinator.lastFullResort = .now
-                } else {
+                } else if !appearanceChanged {
                     // An in-progress scan bumps `treeVersion` roughly every
                     // 100ms; `reloadData()` on every one of those was disruptive
                     // enough (a live scan of a large tree fires this dozens of
@@ -239,6 +260,8 @@ public struct FileTreeView: NSViewRepresentable {
                     // preserves each item's expansion/selection state by
                     // identity — `FileNode` instances are mutated in place and
                     // never recreated, so identity is stable across reloads.
+                    // Skip when we already did a full reload for an appearance
+                    // flip above — a second pass the same update is redundant.
                     outlineView.reloadItem(rootNode, reloadChildren: true)
                 }
             } else {
@@ -274,6 +297,7 @@ public struct FileTreeView: NSViewRepresentable {
         var rootNode: FileNode?
         var lastTreeVersion = -1
         var lastIsScanning = false
+        var lastColorScheme: ColorScheme?
         /// Throttle for the periodic full re-sort during an active scan —
         /// see `updateNSView`'s doc comment on why this exists alongside
         /// the far more frequent `reloadItem` path.

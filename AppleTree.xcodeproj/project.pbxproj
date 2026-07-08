@@ -12,6 +12,7 @@
 		4A5DF073CE2336AC32916356 /* AppleTreeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A148C1BF92057A8016494A2 /* AppleTreeApp.swift */; };
 		7C1A9E2F4B8D6A10C3E5F901 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1A9E2F4B8D6A10C3E5F900 /* SettingsView.swift */; };
 		9A4C1D0B6E2F8C32A5B7D013 /* AppearancePreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A4C1D0B6E2F8C32A5B7D012 /* AppearancePreference.swift */; };
+		A1B2C3D4E5F60718293A4B5C /* WindowAppearanceApplicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5B /* WindowAppearanceApplicator.swift */; };
 		8D2B0F3A5C9E7B21D4F6A012 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 8D2B0F3A5C9E7B21D4F6A011 /* PrivacyInfo.xcprivacy */; };
 		9DE302CCBEBEF45BEAE183C8 /* AppleTreeCore in Frameworks */ = {isa = PBXBuildFile; productRef = CB19F02167853F2F3A5A3DDF /* AppleTreeCore */; };
 		B0ED8A9928A0FD09F7BBD8DD /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088A089B7D97B3BF3BFE294D /* AppState.swift */; };
@@ -26,6 +27,7 @@
 		3B14A61C1EDE2B3A32B6F631 /* AppleTreeUI */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AppleTreeUI; path = Packages/AppleTreeUI; sourceTree = SOURCE_ROOT; };
 		7C1A9E2F4B8D6A10C3E5F900 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		9A4C1D0B6E2F8C32A5B7D012 /* AppearancePreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePreference.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B5B /* WindowAppearanceApplicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAppearanceApplicator.swift; sourceTree = "<group>"; };
 		8297C2C40EA996DA57BE9270 /* PermissionNudgeBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionNudgeBanner.swift; sourceTree = "<group>"; };
 		88E07BDBD7281A0E02BBD15B /* AppleTree.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AppleTree.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8D2B0F3A5C9E7B21D4F6A011 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -59,6 +61,7 @@
 				8297C2C40EA996DA57BE9270 /* PermissionNudgeBanner.swift */,
 				8D2B0F3A5C9E7B21D4F6A011 /* PrivacyInfo.xcprivacy */,
 				7C1A9E2F4B8D6A10C3E5F900 /* SettingsView.swift */,
+				A1B2C3D4E5F60718293A4B5B /* WindowAppearanceApplicator.swift */,
 			);
 			path = AppleTree;
 			sourceTree = "<group>";
@@ -173,6 +176,7 @@
 				DB22AC9BD5C2EB1FF2C3CC75 /* ContentView.swift in Sources */,
 				2B5E6E39753B594719B44E76 /* PermissionNudgeBanner.swift in Sources */,
 				7C1A9E2F4B8D6A10C3E5F901 /* SettingsView.swift in Sources */,
+				A1B2C3D4E5F60718293A4B5C /* WindowAppearanceApplicator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

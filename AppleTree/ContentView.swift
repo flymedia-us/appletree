@@ -6,6 +6,10 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     var appState: AppState
+    /// Resolved light/dark scheme from Settings — passed into AppKit
+    /// representables so they can reload when the theme flips. Never `nil`
+    /// (System is resolved to the live system appearance).
+    var colorScheme: ColorScheme
     @AppStorage(AppState.confirmBeforeDeleteKey) private var confirmBeforeDelete = true
 
     var body: some View {
@@ -31,6 +35,7 @@ struct ContentView: View {
                         isScanning: appState.isScanning,
                         externallyDeletedNodeIDs: appState.externallyDeletedNodeIDs,
                         confirmBeforeDelete: confirmBeforeDelete,
+                        colorScheme: colorScheme,
                         onTreeMutated: appState.notifyTreeMutated,
                         onDeleteFailed: appState.reportDeleteFailure
                     )
@@ -45,6 +50,7 @@ struct ContentView: View {
                     ExtensionSummaryView(
                         rootNode: appState.rootNode,
                         treeVersion: appState.scanGeneration,
+                        colorScheme: colorScheme,
                         onRecomputeFinished: appState.extensionSummaryDidFinishRendering
                     )
                         .frame(minWidth: 260)

@@ -171,9 +171,13 @@ public final class FileNode: @unchecked Sendable {
     public var displaySize: UInt64 { allocatedSize }
 
     /// Fraction of the parent's `displaySize` this node occupies, in [0, 1].
-    /// `1.0` for the root (no parent) or when the parent's size is zero.
+    /// `1.0` for the root (no parent). `0.0` when the parent exists but its
+    /// size is still zero — typical mid-scan, before `finalizeAsDirectory()`
+    /// has run — so the "% of Parent" column shows 0% rather than a
+    /// misleading 100% bar while totals are still settling.
     public var fractionOfParent: Double {
-        guard let parent, parent.displaySize > 0 else { return 1.0 }
+        guard let parent else { return 1.0 }
+        guard parent.displaySize > 0 else { return 0.0 }
         return Double(displaySize) / Double(parent.displaySize)
     }
 

@@ -38,6 +38,16 @@ struct FileNodeTests {
         #expect(root.fractionOfParent == 1.0) // no parent
     }
 
+    @Test("fractionOfParent is 0 when the parent exists but has not yet been sized (mid-scan)")
+    func fractionOfParentZeroParentSize() {
+        let root = FileNode(name: "root", isDirectory: true, allocatedSize: 0)
+        let child = FileNode(name: "child", isDirectory: false, allocatedSize: 250)
+        root.addChild(child)
+
+        #expect(child.fractionOfParent == 0.0)
+        #expect(root.fractionOfParent == 1.0) // root itself still has no parent
+    }
+
     @Test("path is reconstructed by walking parent chain")
     func pathReconstruction() {
         let root = FileNode(name: "root", isDirectory: true)
