@@ -106,7 +106,7 @@ struct ContentView: View {
             Text("Scanning... (Folders: \(SizeFormatting.countString(for: appState.foldersScanned)) Files: \(SizeFormatting.countString(for: appState.filesScanned)))")
                 .font(.body)
         } else if appState.isLoadingTree {
-            Text("Loading tree")
+            Text("Loading tree...")
                 .font(.body)
         } else if let duration = appState.lastScanDuration {
             Text("Scan completed in \(Self.secondsString(Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18)) seconds")
