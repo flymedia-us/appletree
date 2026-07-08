@@ -190,6 +190,16 @@ public struct ExtensionSummaryView: NSViewRepresentable {
                         self.rows = self.sorted(computed)
                         self.totalSize = rootNode.displaySize
                         tableView.reloadData()
+                        // Reports every settled pass, not just a final,
+                        // nothing-else-queued one — see
+                        // `TreemapView.runRelayout`'s identical rationale:
+                        // `rootNode` is a live reference mutated in place,
+                        // so whichever pass actually runs reflects the
+                        // tree as it stands *at that moment*, making a
+                        // guaranteed-but-redundant extra pass unnecessary
+                        // (and a visible source of lag) when this one's
+                        // result is already fully current.
+                        self.onRecomputeFinished?(self.lastTreeVersion)
                     }
                 }
                 guard let self else { return }
@@ -197,8 +207,6 @@ public struct ExtensionSummaryView: NSViewRepresentable {
                 if self.recomputeAgainAfter {
                     self.recomputeAgainAfter = false
                     self.runRecompute(tableView: tableView)
-                } else if !Task.isCancelled {
-                    self.onRecomputeFinished?(self.lastTreeVersion)
                 }
             }
         }

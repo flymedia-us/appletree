@@ -64,7 +64,7 @@ struct ContentView: View {
                 Button("Choose Folder…", action: chooseFolder)
                     .disabled(appState.isScanning)
                 HStack(spacing: 6) {
-                    if appState.isScanning {
+                    if appState.isScanning || appState.isLoadingTree {
                         ProgressView()
                             .controlSize(.small)
                     }

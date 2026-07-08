@@ -182,21 +182,32 @@ public struct TreemapView: View {
                     // layout — drop it so the next hover tick (even a tiny
                     // one) re-hit-tests instead of trusting stale geometry.
                     self.hoveredBox = nil
+                    // Reports every settled pass, not just a final,
+                    // nothing-else-queued one. `rootNode` is a live
+                    // reference mutated in place, so whichever pass's
+                    // `Task.detached` actually runs reads the tree as it
+                    // stands *at that moment* — if this pass was already
+                    // in flight when a newer `treeVersion` arrived
+                    // (coalesced via `relayoutAgainAfter` below), its own
+                    // result can already be fully current, making the
+                    // "guaranteed one more pass" that follows pure
+                    // redundant work. Waiting for that redundant pass
+                    // before reporting is exactly what made "Loading
+                    // tree…" visibly outlast the treemap already being on
+                    // screen, correct. Read `layoutedVersion` (a `@State`
+                    // var) rather than `self.treeVersion` (a plain,
+                    // non-`@State` property) — `self` here is whatever
+                    // `TreemapView` value this Task closure originally
+                    // captured, and only `@State`-backed reads are
+                    // guaranteed to see the latest value through a
+                    // possibly-stale struct snapshot.
+                    self.onRelayoutFinished?(self.layoutedVersion)
                 }
             }
             self.relayoutTask = nil
             if self.relayoutAgainAfter, let latestRoot = self.rootNode {
                 self.relayoutAgainAfter = false
                 self.runRelayout(rootNode: latestRoot, size: self.layoutSize)
-            } else if !Task.isCancelled {
-                // Settled: no further pass already queued, so `layout` now
-                // genuinely reflects `layoutedVersion`'s data. Read that
-                // `@State` var rather than `self.treeVersion` (a plain,
-                // non-`@State` property) — `self` here is whatever
-                // `TreemapView` value this Task closure originally captured,
-                // and only `@State`-backed reads are guaranteed to see the
-                // latest value through a possibly-stale struct snapshot.
-                self.onRelayoutFinished?(self.layoutedVersion)
             }
         }
     }
