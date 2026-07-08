@@ -13,10 +13,17 @@ public struct ExtensionSummaryView: NSViewRepresentable {
     /// here: this view must observe a genuinely-changing value to notice
     /// in-place mutations of the (class-typed) `rootNode` tree.
     public var treeVersion: Int
+    /// Called once this view's extension breakdown has fully settled for a
+    /// given `treeVersion`, passing back the version that just finished —
+    /// see `TreemapView.onRelayoutFinished`'s doc comment for the identical
+    /// rationale (this recompute is just as debounced/backgrounded, and can
+    /// finish well after `treeVersion` itself changes).
+    public var onRecomputeFinished: ((Int) -> Void)?
 
-    public init(rootNode: FileNode?, treeVersion: Int) {
+    public init(rootNode: FileNode?, treeVersion: Int, onRecomputeFinished: ((Int) -> Void)? = nil) {
         self.rootNode = rootNode
         self.treeVersion = treeVersion
+        self.onRecomputeFinished = onRecomputeFinished
     }
 
     /// Extension rows are ranked by size and only this many get a distinct
@@ -101,6 +108,8 @@ public struct ExtensionSummaryView: NSViewRepresentable {
         let coordinator = context.coordinator
         guard let tableView = coordinator.tableView else { return }
 
+        coordinator.onRecomputeFinished = onRecomputeFinished
+
         let isNewRoot = coordinator.rootNode !== rootNode
         coordinator.rootNode = rootNode
 
@@ -125,6 +134,7 @@ public struct ExtensionSummaryView: NSViewRepresentable {
         var rootNode: FileNode?
         var lastTreeVersion = -1
         weak var tableView: NSTableView?
+        var onRecomputeFinished: ((Int) -> Void)?
 
         private var rows: [ExtensionSummary] = []
         private var totalSize: UInt64 = 0
@@ -187,6 +197,8 @@ public struct ExtensionSummaryView: NSViewRepresentable {
                 if self.recomputeAgainAfter {
                     self.recomputeAgainAfter = false
                     self.runRecompute(tableView: tableView)
+                } else if !Task.isCancelled {
+                    self.onRecomputeFinished?(self.lastTreeVersion)
                 }
             }
         }

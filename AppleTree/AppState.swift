@@ -42,15 +42,26 @@ final class AppState {
     /// UI-only presentation bookkeeping.
     private(set) var externallyDeletedNodeIDs: Set<FileNode.ID> = []
 
-    /// True for the brief window between the scanner finishing its
-    /// filesystem walk (`.finished`) and the Tree View/treemap actually
-    /// rendering that result — approximated as "one main-thread run-loop
-    /// tick", since that's long enough for `NSOutlineView.reloadData()` to
-    /// run. Not pixel-perfect for an extremely large tree whose treemap
-    /// relayout is still debouncing, but good enough to bridge the visible
-    /// gap without wiring real completion callbacks through `FileTreeView`/
-    /// `TreemapView`'s `NSViewRepresentable`/`Canvas` internals.
+    /// True for the window between the scanner finishing its filesystem walk
+    /// (`.finished`) and the Treemap/Extension Summary panes actually
+    /// finishing their own (debounced, backgrounded) relayout/recompute of
+    /// that result — see `awaitedVisualizationComponents`. The Tree View
+    /// itself doesn't need to report in here: `NSOutlineView.reloadData()`/
+    /// `reloadItem()` are synchronous, so its rows are already current by
+    /// the time this flips.
     private(set) var isLoadingTree = false
+
+    /// Which of the two async-settling panes (see `TreemapView`'s and
+    /// `ExtensionSummaryView`'s `onRelayoutFinished`/`onRecomputeFinished`)
+    /// haven't yet confirmed they've rendered the scan that just finished.
+    /// `isLoadingTree` flips false only once this drains empty — real
+    /// completion signals rather than a fixed delay, since a large tree's
+    /// relayout/recompute can easily outlast any one guessed timeout.
+    private enum VisualizationComponent: Hashable {
+        case treemap
+        case extensionSummary
+    }
+    private var awaitedVisualizationComponents: Set<VisualizationComponent> = []
 
     private static let fdaNudgeDontAskAgainKey = "com.samfriedman.AppleTree.fdaNudgeDismissed"
 
@@ -95,6 +106,7 @@ final class AppState {
         rootNode = nil
         isScanning = true
         isLoadingTree = false
+        awaitedVisualizationComponents = []
         filesScanned = 0
         foldersScanned = 0
         bytesScanned = 0
@@ -211,6 +223,7 @@ final class AppState {
         case .finished(let duration, let files, let skipped, let tccDenied):
             isScanning = false
             isLoadingTree = true
+            awaitedVisualizationComponents = [.treemap, .extensionSummary]
             filesScanned = files
             foldersSkipped = skipped
             tccDeniedFolders = tccDenied
@@ -218,11 +231,9 @@ final class AppState {
             currentPath = nil
             bumpGeneration(force: true)
             startWatchingForExternalChanges()
-            // Schedules the flip back to "Scan completed" for the run loop
-            // tick right after this one — see `isLoadingTree`'s doc comment.
-            DispatchQueue.main.async { [weak self] in
-                self?.isLoadingTree = false
-            }
+            // `isLoadingTree` flips back to false once both panes report
+            // rendering this generation — see `treemapDidFinishRendering`/
+            // `extensionSummaryDidFinishRendering`.
 
         case .failed(let error):
             isScanning = false
@@ -246,6 +257,31 @@ final class AppState {
     /// recompute and pick up the change too.
     func notifyTreeMutated() {
         bumpGeneration(force: true)
+    }
+
+    /// Reported by `TreemapView.onRelayoutFinished` once its relayout has
+    /// settled on `version`.
+    func treemapDidFinishRendering(forGeneration version: Int) {
+        markVisualizationRendered(.treemap, version: version)
+    }
+
+    /// Reported by `ExtensionSummaryView.onRecomputeFinished` once its
+    /// recompute has settled on `version`.
+    func extensionSummaryDidFinishRendering(forGeneration version: Int) {
+        markVisualizationRendered(.extensionSummary, version: version)
+    }
+
+    /// Ignores a report that doesn't match the generation `.finished` is
+    /// currently waiting on — either a stale report left over from an
+    /// interim mid-scan relayout (`isLoadingTree` is false then, since it
+    /// only becomes true starting at `.finished`), or, in principle, one
+    /// from a generation a newer scan has already superseded.
+    private func markVisualizationRendered(_ component: VisualizationComponent, version: Int) {
+        guard isLoadingTree, version == scanGeneration else { return }
+        awaitedVisualizationComponents.remove(component)
+        if awaitedVisualizationComponents.isEmpty {
+            isLoadingTree = false
+        }
     }
 
     private func bumpGeneration(force: Bool = false) {

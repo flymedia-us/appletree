@@ -9,6 +9,16 @@ public struct TreemapView: View {
     public let rootNode: FileNode?
     public var selection: SelectionModel
     public var treeVersion: Int
+    /// Called once this view's relayout has fully settled for a given
+    /// `treeVersion` — i.e. what's on screen now actually reflects that
+    /// version's data — passing back the version that just finished.
+    /// Distinct from `treeVersion` simply changing: that only means a
+    /// relayout was *requested*; the actual (80ms-debounced, backgrounded)
+    /// computation can finish well after that. Lets `AppState` know
+    /// precisely when its "Loading tree" status can flip to "Scan
+    /// completed", instead of guessing at a fixed delay that a large tree's
+    /// relayout can easily outlast.
+    public var onRelayoutFinished: ((Int) -> Void)?
 
     @State private var layout: [TreemapNode] = []
     @State private var layoutSize: CGSize = .zero
@@ -27,10 +37,16 @@ public struct TreemapView: View {
     /// duplicate walk per trigger.
     @State private var relayoutAgainAfter = false
 
-    public init(rootNode: FileNode?, selection: SelectionModel, treeVersion: Int) {
+    public init(
+        rootNode: FileNode?,
+        selection: SelectionModel,
+        treeVersion: Int,
+        onRelayoutFinished: ((Int) -> Void)? = nil
+    ) {
         self.rootNode = rootNode
         self.selection = selection
         self.treeVersion = treeVersion
+        self.onRelayoutFinished = onRelayoutFinished
     }
 
     public var body: some View {
@@ -172,6 +188,15 @@ public struct TreemapView: View {
             if self.relayoutAgainAfter, let latestRoot = self.rootNode {
                 self.relayoutAgainAfter = false
                 self.runRelayout(rootNode: latestRoot, size: self.layoutSize)
+            } else if !Task.isCancelled {
+                // Settled: no further pass already queued, so `layout` now
+                // genuinely reflects `layoutedVersion`'s data. Read that
+                // `@State` var rather than `self.treeVersion` (a plain,
+                // non-`@State` property) — `self` here is whatever
+                // `TreemapView` value this Task closure originally captured,
+                // and only `@State`-backed reads are guaranteed to see the
+                // latest value through a possibly-stale struct snapshot.
+                self.onRelayoutFinished?(self.layoutedVersion)
             }
         }
     }

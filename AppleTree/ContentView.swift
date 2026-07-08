@@ -38,11 +38,20 @@ struct ContentView: View {
                         // the underlying `NSSplitView` directly once, right
                         // after its first layout.
                         .background(SplitDividerPositioner(fraction: 0.6))
-                    ExtensionSummaryView(rootNode: appState.rootNode, treeVersion: appState.scanGeneration)
+                    ExtensionSummaryView(
+                        rootNode: appState.rootNode,
+                        treeVersion: appState.scanGeneration,
+                        onRecomputeFinished: appState.extensionSummaryDidFinishRendering
+                    )
                         .frame(minWidth: 260)
                 }
                 .frame(minHeight: 180)
-                TreemapView(rootNode: appState.rootNode, selection: appState.selection, treeVersion: appState.scanGeneration)
+                TreemapView(
+                    rootNode: appState.rootNode,
+                    selection: appState.selection,
+                    treeVersion: appState.scanGeneration,
+                    onRelayoutFinished: appState.treemapDidFinishRendering
+                )
                     .frame(minHeight: 180)
             }
         }
