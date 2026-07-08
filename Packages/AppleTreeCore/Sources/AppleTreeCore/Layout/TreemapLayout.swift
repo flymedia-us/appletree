@@ -96,8 +96,20 @@ public enum TreemapLayout {
         let group1 = children[children.startIndex..<splitIndex]
         let group2 = children[splitIndex...]
         let group1Size = group1.reduce(UInt64(0)) { $0 + $1.displaySize }
-        let group2Size = totalSize - group1Size
-        let ratio = CGFloat(Double(group1Size) / Double(totalSize))
+        // `totalSize` was read once by the caller (ultimately from a
+        // parent's `displaySize`, at the top of the recursion); each
+        // child's own `displaySize` here is read fresh, moments later.
+        // `FileNode`'s aggregate fields aren't frozen for the layout's
+        // duration — `markRemoved()`/`unmarkRemoved()` (external-change
+        // watch, in-app delete) can recompute them concurrently — so
+        // `group1Size` can transiently exceed a `totalSize` that's gone
+        // stale in between. A plain `totalSize - group1Size` underflowed
+        // and trapped for real; saturating at 0 instead makes a
+        // stale-for-one-frame split harmless — it self-corrects on the
+        // next relayout, which the same change that caused the staleness
+        // already triggers.
+        let group2Size = totalSize > group1Size ? totalSize - group1Size : 0
+        let ratio = min(1, CGFloat(Double(group1Size) / Double(totalSize)))
 
         let rect1: CGRect
         let rect2: CGRect

@@ -23,17 +23,44 @@ public final class FileNode: @unchecked Sendable {
 
     public let isDirectory: Bool
 
+    /// `logicalSize`/`allocatedSize`/`fileCount`/`folderCount`/`isRemoved`
+    /// bundled behind one lock so `finalizeAsDirectory()` (and
+    /// `markRemoved()`/`unmarkRemoved()`, which call it on an
+    /// already-published, concurrently-*read* node — see this type's own
+    /// concurrency invariant above) update all four numbers atomically.
+    /// Before this, a reader (the treemap layout, the extension breakdown)
+    /// could observe a torn mix of old-and-new values for a single node —
+    /// e.g. a freshly-updated `allocatedSize` alongside a stale
+    /// `fileCount` — mid-write. Confirmed as a real crash: `markRemoved()`
+    /// (fired by the external-change watch, well after the initial scan)
+    /// racing a live treemap relayout produced a child-group size sum that
+    /// exceeded its parent's just-read `totalSize`, underflowing
+    /// `TreemapLayout.layoutChildren`'s `totalSize - group1Size` and
+    /// trapping. This closes the single-node half of that race; the other
+    /// half (a parent's `totalSize`, read once, going stale relative to its
+    /// children's sizes summed moments later — inherent to laying out a
+    /// tree that's still allowed to change mid-walk) is handled by making
+    /// that arithmetic saturate instead of trap (see `TreemapLayout`).
+    private struct Aggregate: Sendable {
+        var logicalSize: UInt64 = 0
+        var allocatedSize: UInt64 = 0
+        var fileCount: Int = 0
+        var folderCount: Int = 0
+        var isRemoved = false
+    }
+    private let aggregateLock: OSAllocatedUnfairLock<Aggregate>
+
     /// Sum of `st_size` for a file; sum of all descendant files' sizes for a
     /// directory. For directories this is only meaningful once the directory's
     /// scan has completed (i.e. after `subtreeCompleted` for it has fired).
-    public internal(set) var logicalSize: UInt64
+    public var logicalSize: UInt64 { aggregateLock.withLock { $0.logicalSize } }
 
     /// On-disk size (`st_blocks * 512`), accounting for compression/sparse
     /// files. This is WizTree's "Allocated" column.
-    public internal(set) var allocatedSize: UInt64
+    public var allocatedSize: UInt64 { aggregateLock.withLock { $0.allocatedSize } }
 
-    public internal(set) var fileCount: Int
-    public internal(set) var folderCount: Int
+    public var fileCount: Int { aggregateLock.withLock { $0.fileCount } }
+    public var folderCount: Int { aggregateLock.withLock { $0.folderCount } }
 
     /// Empty for files. For directories, populated incrementally by the
     /// scanner and sorted descending by `displaySize` once the directory's
@@ -82,7 +109,7 @@ public final class FileNode: @unchecked Sendable {
     /// removed from the array) so the Tree View can still show it, struck
     /// through, at its last-known position; only the roll-up math and other
     /// views' rendering skip it. See `markRemoved()`.
-    public internal(set) var isRemoved = false
+    public var isRemoved: Bool { aggregateLock.withLock { $0.isRemoved } }
 
     public init(
         name: String,
@@ -98,10 +125,12 @@ public final class FileNode: @unchecked Sendable {
     ) {
         self.name = name
         self.isDirectory = isDirectory
-        self.logicalSize = logicalSize
-        self.allocatedSize = allocatedSize
-        self.fileCount = fileCount
-        self.folderCount = folderCount
+        self.aggregateLock = OSAllocatedUnfairLock(initialState: Aggregate(
+            logicalSize: logicalSize,
+            allocatedSize: allocatedSize,
+            fileCount: fileCount,
+            folderCount: folderCount
+        ))
         self.category = category
         self.modificationDate = modificationDate
         self.rootPath = rootPath
@@ -192,10 +221,12 @@ extension FileNode {
     func addChild(_ child: FileNode) {
         child.parent = self
         childrenLock.withLock { $0.append(child) }
-        if child.isDirectory {
-            folderCount += 1
-        } else {
-            fileCount += 1
+        aggregateLock.withLock { state in
+            if child.isDirectory {
+                state.folderCount += 1
+            } else {
+                state.fileCount += 1
+            }
         }
     }
 
@@ -226,10 +257,17 @@ extension FileNode {
                 files += 1
             }
         }
-        logicalSize = logical
-        allocatedSize = allocated
-        fileCount = files
-        folderCount = folders
+        // `withLock`'s closure is `@Sendable`, so it can't capture the loop's
+        // own `var` accumulators directly (Swift 6 strict concurrency flags
+        // that even though `withLock` runs it synchronously, right here) —
+        // rebind to `let`s first.
+        let (finalLogical, finalAllocated, finalFiles, finalFolders) = (logical, allocated, files, folders)
+        aggregateLock.withLock { state in
+            state.logicalSize = finalLogical
+            state.allocatedSize = finalAllocated
+            state.fileCount = finalFiles
+            state.folderCount = finalFolders
+        }
     }
 
     /// Recomputes every ancestor's aggregate from `self` up to the root —
@@ -252,8 +290,12 @@ extension FileNode {
     /// View's parent rows, the treemap, and the extension breakdown all
     /// reflect the removal without waiting for a rescan. See `isRemoved`.
     public func markRemoved() {
-        guard !isRemoved else { return }
-        isRemoved = true
+        let changed = aggregateLock.withLock { state -> Bool in
+            guard !state.isRemoved else { return false }
+            state.isRemoved = true
+            return true
+        }
+        guard changed else { return }
         refinalizeAncestors()
     }
 
@@ -261,8 +303,12 @@ extension FileNode {
     /// exists again" case (e.g. a file recreated, or a Trash action undone
     /// outside the app).
     public func unmarkRemoved() {
-        guard isRemoved else { return }
-        isRemoved = false
+        let changed = aggregateLock.withLock { state -> Bool in
+            guard state.isRemoved else { return false }
+            state.isRemoved = false
+            return true
+        }
+        guard changed else { return }
         refinalizeAncestors()
     }
 }

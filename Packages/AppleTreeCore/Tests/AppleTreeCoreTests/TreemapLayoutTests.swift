@@ -175,6 +175,41 @@ struct TreemapLayoutTests {
         #expect(!result.contains { $0.source === leaf })
     }
 
+    @Test("a totalSize gone stale below the children's actual sum saturates instead of crashing")
+    func staleTotalSizeDoesNotCrash() {
+        // Regression test for a real crash: `FileNode`'s aggregate fields
+        // aren't frozen once a tree is "published" — `markRemoved()`/
+        // `unmarkRemoved()` (external-change watch, in-app delete) can
+        // recompute a node's own `displaySize` concurrently with a treemap
+        // relayout already in flight elsewhere in the tree, so a parent's
+        // `totalSize` (read once, at the top of the recursion) can go
+        // stale relative to its children's sizes summed moments later.
+        // Reproduced here deterministically (no real concurrency needed):
+        // `addChild` deliberately never updates a parent's own size, so
+        // constructing `root` with an `allocatedSize` smaller than even
+        // one child's own gives `layoutChildren` exactly the "totalSize
+        // less than a child group's actual sum" shape that used to
+        // underflow `totalSize - group1Size` and trap.
+        let child1 = FileNode(name: "a", isDirectory: false, logicalSize: 700, allocatedSize: 700)
+        let child2 = FileNode(name: "b", isDirectory: false, logicalSize: 700, allocatedSize: 700)
+        let root = FileNode(name: "root", isDirectory: true, logicalSize: 500, allocatedSize: 500)
+        root.addChild(child1)
+        root.addChild(child2)
+
+        let result = TreemapLayout.layout(node: root, in: CGRect(x: 0, y: 0, width: 200, height: 200))
+
+        // The point of this test is that this doesn't crash. `child1` alone
+        // already exceeds the (stale) `totalSize`, so its ratio saturates to
+        // 1 and `child2` is correctly left with no space at all — same as
+        // any box that doesn't clear `minBoxSize`, not a bug to assert
+        // against here.
+        #expect(result.contains { $0.source === child1 })
+        for node in result {
+            #expect(node.rect.width >= 0)
+            #expect(node.rect.height >= 0)
+        }
+    }
+
     @Test("a node marked removed gets no box of its own and doesn't skew its siblings' proportions")
     func removedNodeIsExcludedFromLayout() {
         let doomed = FileNode(name: "doomed", isDirectory: false, logicalSize: 900, allocatedSize: 900)
