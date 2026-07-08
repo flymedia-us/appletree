@@ -2,9 +2,11 @@ import AppKit
 import AppleTreeCore
 import AppleTreeUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     var appState: AppState
+    @AppStorage(AppState.confirmBeforeDeleteKey) private var confirmBeforeDelete = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,7 +30,9 @@ struct ContentView: View {
                         treeVersion: appState.scanGeneration,
                         isScanning: appState.isScanning,
                         externallyDeletedNodeIDs: appState.externallyDeletedNodeIDs,
-                        onTreeMutated: appState.notifyTreeMutated
+                        confirmBeforeDelete: confirmBeforeDelete,
+                        onTreeMutated: appState.notifyTreeMutated,
+                        onDeleteFailed: appState.reportDeleteFailure
                     )
                         .frame(minWidth: 320)
                         // `HSplitView` doesn't expose a percentage-based
@@ -53,15 +57,34 @@ struct ContentView: View {
                     onRelayoutFinished: appState.treemapDidFinishRendering
                 )
                     .frame(minHeight: 180)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Treemap")
+                    .accessibilityValue(treemapAccessibilityValue)
+                    .accessibilityHint("Visual map of disk usage by file size. Selection follows the Tree View.")
             }
         }
         .frame(minWidth: 800, minHeight: 480)
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            guard !appState.isScanning else { return false }
+            return handleFolderDrop(providers)
+        }
+    }
+
+    private var treemapAccessibilityValue: String {
+        guard let root = appState.rootNode else {
+            return "No scan loaded"
+        }
+        if let selectedID = appState.selection.selectedNodeID,
+           let selected = root.descendant(withID: selectedID) {
+            return "\(selected.name), \(SizeFormatting.string(for: selected.displaySize))"
+        }
+        return "\(root.name), \(SizeFormatting.string(for: root.displaySize))"
     }
 
     private var toolbar: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Button("Choose Folder…", action: chooseFolder)
+                Button("Choose Folder…", action: appState.presentFolderPickerAndScan)
                     .disabled(appState.isScanning)
                 HStack(spacing: 6) {
                     if appState.isScanning || appState.isLoadingTree {
@@ -118,16 +141,29 @@ struct ContentView: View {
         String(format: "%.2f", seconds)
     }
 
-    private func chooseFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Scan"
-        panel.message = "Choose a folder or volume to scan"
+    private func handleFolderDrop(_ providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        }) else { return false }
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        appState.startScan(root: url)
+        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+            let url: URL?
+            if let data = item as? Data {
+                url = URL(dataRepresentation: data, relativeTo: nil)
+            } else if let dropped = item as? URL {
+                url = dropped
+            } else {
+                url = nil
+            }
+            guard let url else { return }
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue else { return }
+            Task { @MainActor in
+                appState.startScan(root: url)
+            }
+        }
+        return true
     }
 }
 

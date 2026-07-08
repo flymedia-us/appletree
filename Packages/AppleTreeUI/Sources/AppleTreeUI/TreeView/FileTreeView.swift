@@ -37,6 +37,12 @@ public struct FileTreeView: NSViewRepresentable {
     /// they only react to `treeVersion` — so the app layer needs this signal
     /// to bump that counter and bring them back in sync too.
     public var onTreeMutated: (() -> Void)?
+    /// When `true` (the public-release default), Delete / ⌘⌫ presents an
+    /// `NSAlert` before calling `FileManager.trashItem`.
+    public var confirmBeforeDelete: Bool
+    /// Surfaces Trash failures to the app chrome — Delete used to fail
+    /// silently, leaving the row unchanged with no explanation.
+    public var onDeleteFailed: ((Error) -> Void)?
 
     public init(
         rootNode: FileNode?,
@@ -44,14 +50,18 @@ public struct FileTreeView: NSViewRepresentable {
         treeVersion: Int,
         isScanning: Bool,
         externallyDeletedNodeIDs: Set<FileNode.ID> = [],
-        onTreeMutated: (() -> Void)? = nil
+        confirmBeforeDelete: Bool = true,
+        onTreeMutated: (() -> Void)? = nil,
+        onDeleteFailed: ((Error) -> Void)? = nil
     ) {
         self.rootNode = rootNode
         self.selection = selection
         self.treeVersion = treeVersion
         self.isScanning = isScanning
         self.externallyDeletedNodeIDs = externallyDeletedNodeIDs
+        self.confirmBeforeDelete = confirmBeforeDelete
         self.onTreeMutated = onTreeMutated
+        self.onDeleteFailed = onDeleteFailed
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
@@ -153,6 +163,8 @@ public struct FileTreeView: NSViewRepresentable {
         guard let outlineView = coordinator.outlineView else { return }
 
         coordinator.onTreeMutated = onTreeMutated
+        coordinator.onDeleteFailed = onDeleteFailed
+        coordinator.confirmBeforeDelete = confirmBeforeDelete
 
         let isNewRoot = coordinator.rootNode !== rootNode
         if isNewRoot {
@@ -269,6 +281,8 @@ public struct FileTreeView: NSViewRepresentable {
         weak var outlineView: NSOutlineView?
         let selection: SelectionModel
         var onTreeMutated: (() -> Void)?
+        var onDeleteFailed: ((Error) -> Void)?
+        var confirmBeforeDelete = true
         private var isSyncingSelection = false
 
         private var sortKey: SortKey?
@@ -511,6 +525,8 @@ public struct FileTreeView: NSViewRepresentable {
 
         private func delete(_ node: FileNode) {
             guard !deletedNodeIDs.contains(node.id) else { return }
+            if confirmBeforeDelete, !confirmDelete(of: node) { return }
+
             let path = node.path
             let nodeID = node.id
             Task {
@@ -526,10 +542,23 @@ public struct FileTreeView: NSViewRepresentable {
                 } catch {
                     // Left unmarked/un-struck-through on failure (e.g.
                     // permission denied, already moved externally) — the row
-                    // simply stays as it was, which already communicates
-                    // "nothing changed" without a separate error path.
+                    // stays as it was, and the app chrome shows why.
+                    onDeleteFailed?(error)
                 }
             }
+        }
+
+        /// Finder-style confirmation before a destructive Trash move. Returns
+        /// `true` only when the user explicitly confirms.
+        private func confirmDelete(of node: FileNode) -> Bool {
+            let alert = NSAlert()
+            let kind = node.isDirectory ? "folder" : "file"
+            alert.messageText = "Move “\(node.name)” to the Trash?"
+            alert.informativeText = "This \(kind) will be moved to the Trash. You can restore it from the Trash later."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Move to Trash")
+            alert.addButton(withTitle: "Cancel")
+            return alert.runModal() == .alertFirstButtonReturn
         }
 
         private func markDeleted(_ id: FileNode.ID) {

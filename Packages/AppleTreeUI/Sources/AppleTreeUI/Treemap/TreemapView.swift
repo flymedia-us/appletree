@@ -102,7 +102,8 @@ public struct TreemapView: View {
     }
 
     /// Dark neutral background the colored file boxes and folder label bands
-    /// sit on top of — matches the reference treemap styling (#3A3939).
+    /// sit on top of — matches WizTree's treemap styling (#3A3939) by design,
+    /// independent of the rest of the app's light/dark appearance.
     private static let backgroundColor = Color(red: 0x3A / 255.0, green: 0x39 / 255.0, blue: 0x39 / 255.0)
     private static let folderLabelBackground = Color(red: 0x50 / 255.0, green: 0x4F / 255.0, blue: 0x4F / 255.0)
     private static let folderStroke = Color.white.opacity(0.18)

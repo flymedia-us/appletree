@@ -1,3 +1,4 @@
+import AppKit
 import AppleTreeCore
 import AppleTreeUI
 import Foundation
@@ -63,7 +64,19 @@ final class AppState {
     }
     private var awaitedVisualizationComponents: Set<VisualizationComponent> = []
 
-    private static let fdaNudgeDontAskAgainKey = "com.samfriedman.AppleTree.fdaNudgeDismissed"
+    static let fdaNudgeDontAskAgainKey = "com.samfriedman.AppleTree.fdaNudgeDismissed"
+    static let confirmBeforeDeleteKey = "com.samfriedman.AppleTree.confirmBeforeDelete"
+    static let appearancePreferenceKey = "com.samfriedman.AppleTree.appearancePreference"
+
+    /// Whether Delete / ⌘⌫ should ask before calling `FileManager.trashItem`.
+    /// Defaults to `true` when the preference has never been set — safer for
+    /// a first public release of a disk utility.
+    var confirmBeforeDelete: Bool {
+        if UserDefaults.standard.object(forKey: Self.confirmBeforeDeleteKey) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: Self.confirmBeforeDeleteKey)
+    }
 
     /// Whether to show the "grant Full Disk Access" banner. Driven entirely
     /// by what the just-completed scan actually hit (see `FolderSkipReason`)
@@ -96,12 +109,32 @@ final class AppState {
     private var lastGenerationBump: ContinuousClock.Instant = .now
 
     private var scanRootURL: URL?
+    /// The URL for which `startAccessingSecurityScopedResource()` succeeded.
+    /// Kept alive for the whole scan + post-scan watch/delete lifetime so
+    /// sandboxed access to the user-selected tree doesn't evaporate mid-use.
+    private var securityScopedRootURL: URL?
     private var changeWatcher: ExternalChangeWatcher?
     private var changeWatchTask: Task<Void, Never>?
+
+    /// Presents the standard folder picker and starts a scan on the chosen
+    /// root. Shared by the toolbar button and File → Open Folder… so both
+    /// paths go through the same security-scoped access handshake.
+    func presentFolderPickerAndScan() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Scan"
+        panel.message = "Choose a folder or volume to scan"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        startScan(root: url)
+    }
 
     func startScan(root: URL) {
         scanTask?.cancel()
         stopWatchingForExternalChanges()
+        releaseSecurityScopedAccess()
 
         rootNode = nil
         isScanning = true
@@ -121,6 +154,14 @@ final class AppState {
         externallyDeletedNodeIDs = []
         selection.selectedNodeID = nil
 
+        // Sandboxed apps only retain access to an `NSOpenPanel`-chosen
+        // directory for the duration of `startAccessingSecurityScopedResource`
+        // — without this, deep scans, FSEvents watches, and Trash deletes
+        // under that root can fail intermittently once the panel returns.
+        if root.startAccessingSecurityScopedResource() {
+            securityScopedRootURL = root
+        }
+
         scanRootURL = root
         let scanner = DirectoryScanner()
         scanTask = Task { [weak self] in
@@ -133,6 +174,17 @@ final class AppState {
                 self.handle(.failed(error))
             }
         }
+    }
+
+    private func releaseSecurityScopedAccess() {
+        securityScopedRootURL?.stopAccessingSecurityScopedResource()
+        securityScopedRootURL = nil
+    }
+
+    /// Surfaces a Trash failure in the toolbar error slot — Delete used to
+    /// fail silently, which is unacceptable for a destructive disk utility.
+    func reportDeleteFailure(_ error: Error) {
+        errorMessage = "Couldn't move to Trash: \(error.localizedDescription)"
     }
 
     func cancelScan() {

@@ -16,22 +16,26 @@ Pre-release. Scanning, all three views, deletion, and Quick Look integration wor
 - **Tree View** — an `NSOutlineView`-backed, sortable outline (Folder, % of Parent, Size, Logical Size, Files, Folders, Modified), matching WizTree's default size-descending order.
 - **Treemap** — a labeled, ordered treemap colored by file type, with hover tooltips and click-to-select synced against the Tree View.
 - **Extension Summary** — a flat, whole-scan breakdown by file extension (color, type name, percent, size, file count).
-- **Delete to Trash** — from either the Tree View's context menu or ⌘⌫, with an immediate struck-through row and recomputed parent/treemap/extension totals (no rescan needed).
+- **Delete to Trash** — from either the Tree View's context menu or ⌘⌫, with a confirmation alert (toggleable in Settings), immediate struck-through row, and recomputed parent/treemap/extension totals (no rescan needed).
 - **Quick Look** — Space bar to preview the selected file, Finder-style.
 - **Live external-change detection** — an `FSEventStream` watch flags files deleted or moved out from under a completed scan by Finder, Terminal, or any other process.
 - **Full Disk Access awareness** — scans classify *why* a folder was skipped (TCC-gated, root-owned/system-protected, plain permission-denied, or other) and nudge for Full Disk Access only when it would actually help.
 - **Volume capacity readout** — Total/Used/Reserved/Free for the scanned volume, independent of the scan's own tree total.
+- **Settings** — theme (System / Light / Dark), confirm-before-delete, and Full Disk Access nudge preferences (⌘,).
+- **Open Folder** — File → Open Folder… (⌘O), toolbar button, or drag a folder onto the window.
 
 ## Known limitations
 
 - **DUNS/Apple Developer Program enrollment is pending** — the app isn't notarized or code-signed for distribution yet, and there's no App Store listing.
 - **Placeholder app icon.** [`AppIcon.appiconset`](AppleTree/Assets.xcassets/AppIcon.appiconset) has a temporary icon, not a final one.
 - **No promotional site or privacy policy yet** — planned as a separate, lightweight website, out of scope for this repository.
+- **No auto-updater** — limited releases will need a manual download until Sparkle (or App Store) distribution is wired up.
+- **English-only UI** — no localization yet.
 
 ## Project structure
 
 ```
-AppleTree/                    App target (SwiftUI shell, AppState, entitlements)
+AppleTree/                    App target (SwiftUI shell, AppState, entitlements, PrivacyInfo.xcprivacy)
 Packages/AppleTreeCore/       Scanning engine, FileNode model, categorization, treemap layout — no UI/framework dependencies
 Packages/AppleTreeUI/         AppKit-backed views (Tree View, Treemap, Extension Summary) as SwiftUI NSViewRepresentables
 GrandPerspective-3_7_2/       Vendored GPL-licensed reference source, for reading (treemap layout shape, legacy scan patterns) — not compiled into the app; see its own COPYING.txt

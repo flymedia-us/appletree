@@ -17,6 +17,10 @@ targets:
     platform: macOS
     sources:
       - path: AppleTree
+        excludes:
+          - PrivacyInfo.xcprivacy
+      - path: AppleTree/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.samfriedman.AppleTree
@@ -25,7 +29,7 @@ targets:
         SWIFT_VERSION: "6.0"
         MACOSX_DEPLOYMENT_TARGET: "15.0"
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Sam Friedman"
+        INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Fly Media LLC"
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
         # Required alongside the matching sandbox entitlements in
         # AppleTree.entitlements — without these, macOS denies (or, for

@@ -215,6 +215,16 @@ extension FileNode: Identifiable {
 }
 
 extension FileNode {
+    /// Depth-first lookup by reference identity. Used by UI layers that hold
+    /// a `FileNode.ID` (selection, accessibility) and need the live node.
+    public func descendant(withID id: FileNode.ID) -> FileNode? {
+        if self.id == id { return self }
+        for child in children {
+            if let found = child.descendant(withID: id) { return found }
+        }
+        return nil
+    }
+
     /// Appends a child (scanner-internal mutation; see the type-level
     /// concurrency invariant). Does not update `logicalSize`/`allocatedSize`/
     /// counts on `self` — callers finalize those once all children are known.

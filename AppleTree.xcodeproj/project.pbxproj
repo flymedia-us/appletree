@@ -10,6 +10,9 @@
 		2B5E6E39753B594719B44E76 /* PermissionNudgeBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8297C2C40EA996DA57BE9270 /* PermissionNudgeBanner.swift */; };
 		3D7C1298EDFCEFC75A4A015F /* AppleTreeUI in Frameworks */ = {isa = PBXBuildFile; productRef = 8CA88D95EA1A7AB039BEE662 /* AppleTreeUI */; };
 		4A5DF073CE2336AC32916356 /* AppleTreeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A148C1BF92057A8016494A2 /* AppleTreeApp.swift */; };
+		7C1A9E2F4B8D6A10C3E5F901 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1A9E2F4B8D6A10C3E5F900 /* SettingsView.swift */; };
+		9A4C1D0B6E2F8C32A5B7D013 /* AppearancePreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A4C1D0B6E2F8C32A5B7D012 /* AppearancePreference.swift */; };
+		8D2B0F3A5C9E7B21D4F6A012 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 8D2B0F3A5C9E7B21D4F6A011 /* PrivacyInfo.xcprivacy */; };
 		9DE302CCBEBEF45BEAE183C8 /* AppleTreeCore in Frameworks */ = {isa = PBXBuildFile; productRef = CB19F02167853F2F3A5A3DDF /* AppleTreeCore */; };
 		B0ED8A9928A0FD09F7BBD8DD /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088A089B7D97B3BF3BFE294D /* AppState.swift */; };
 		DB22AC9BD5C2EB1FF2C3CC75 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8BEBC7600E4F987AAF38A32 /* ContentView.swift */; };
@@ -21,8 +24,11 @@
 		088A089B7D97B3BF3BFE294D /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		0A148C1BF92057A8016494A2 /* AppleTreeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTreeApp.swift; sourceTree = "<group>"; };
 		3B14A61C1EDE2B3A32B6F631 /* AppleTreeUI */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AppleTreeUI; path = Packages/AppleTreeUI; sourceTree = SOURCE_ROOT; };
+		7C1A9E2F4B8D6A10C3E5F900 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		9A4C1D0B6E2F8C32A5B7D012 /* AppearancePreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePreference.swift; sourceTree = "<group>"; };
 		8297C2C40EA996DA57BE9270 /* PermissionNudgeBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionNudgeBanner.swift; sourceTree = "<group>"; };
 		88E07BDBD7281A0E02BBD15B /* AppleTree.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AppleTree.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8D2B0F3A5C9E7B21D4F6A011 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A8BEBC7600E4F987AAF38A32 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		CEC4AD5E15E88DF71F1A5E4E /* AppleTree.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppleTree.entitlements; sourceTree = "<group>"; };
 		E2ECFBF1AA6E023071C8D020 /* AppleTreeCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AppleTreeCore; path = Packages/AppleTreeCore; sourceTree = SOURCE_ROOT; };
@@ -46,10 +52,13 @@
 			children = (
 				CEC4AD5E15E88DF71F1A5E4E /* AppleTree.entitlements */,
 				0A148C1BF92057A8016494A2 /* AppleTreeApp.swift */,
+				9A4C1D0B6E2F8C32A5B7D012 /* AppearancePreference.swift */,
 				088A089B7D97B3BF3BFE294D /* AppState.swift */,
 				06AF0644AD79CD3FD6BE8B01 /* Assets.xcassets */,
 				A8BEBC7600E4F987AAF38A32 /* ContentView.swift */,
 				8297C2C40EA996DA57BE9270 /* PermissionNudgeBanner.swift */,
+				8D2B0F3A5C9E7B21D4F6A011 /* PrivacyInfo.xcprivacy */,
+				7C1A9E2F4B8D6A10C3E5F900 /* SettingsView.swift */,
 			);
 			path = AppleTree;
 			sourceTree = "<group>";
@@ -147,6 +156,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F5AA156DA4B51B790F0E8B91 /* Assets.xcassets in Resources */,
+				8D2B0F3A5C9E7B21D4F6A012 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -159,8 +169,10 @@
 			files = (
 				B0ED8A9928A0FD09F7BBD8DD /* AppState.swift in Sources */,
 				4A5DF073CE2336AC32916356 /* AppleTreeApp.swift in Sources */,
+				9A4C1D0B6E2F8C32A5B7D013 /* AppearancePreference.swift in Sources */,
 				DB22AC9BD5C2EB1FF2C3CC75 /* ContentView.swift in Sources */,
 				2B5E6E39753B594719B44E76 /* PermissionNudgeBanner.swift in Sources */,
+				7C1A9E2F4B8D6A10C3E5F901 /* SettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -179,7 +191,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Sam Friedman";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Fly Media LLC";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Apple Tree reads your Photos Library so a scan of your Pictures folder or whole disk can include its size.";
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Apple Tree reads your Downloads folder so a scan can include its size.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -207,7 +219,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Sam Friedman";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Fly Media LLC";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Apple Tree reads your Photos Library so a scan of your Pictures folder or whole disk can include its size.";
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Apple Tree reads your Downloads folder so a scan can include its size.";
 				LD_RUNPATH_SEARCH_PATHS = (
