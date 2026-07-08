@@ -14,7 +14,7 @@ struct AppleTreeApp: App {
             ContentView(appState: appState)
                 .preferredColorScheme(preferredScheme)
         }
-        .windowResizability(.contentMinSize)
+        .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open Folder…") {
