@@ -19,6 +19,13 @@ public struct TreemapView: View {
     /// and the tooltip's anchor — see `body`'s doc comments for both.
     @State private var hoveredBox: TreemapNode?
     @State private var relayoutTask: Task<Void, Never>?
+    /// See `ExtensionSummaryView.Coordinator`'s identical `recomputeAgainAfter`
+    /// for the full rationale — coalesces triggers that arrive while a
+    /// layout is already in flight into exactly one guaranteed follow-up
+    /// pass, instead of spawning an overlapping (and, since `TreemapLayout.layout`
+    /// has no cooperative cancellation checks, effectively uncancellable)
+    /// duplicate walk per trigger.
+    @State private var relayoutAgainAfter = false
 
     public init(rootNode: FileNode?, selection: SelectionModel, treeVersion: Int) {
         self.rootNode = rootNode
@@ -127,20 +134,45 @@ public struct TreemapView: View {
         // into one relayout of the final size, and running that one on a
         // detached task keeps even it off the main thread; only the final
         // `self.layout = computed` assignment hops back.
-        relayoutTask?.cancel()
+        //
+        // Coalesces to at most one layout in flight at a time — during an
+        // active scan `treeVersion` bumps roughly every 100ms, and without
+        // this, cancelling `relayoutTask` alone doesn't stop the wasted
+        // work: `TreemapLayout.layout` is a plain synchronous recursive
+        // function with no cooperative cancellation checks, so a cancelled
+        // `Task.detached` keeps running to completion regardless. Confirmed
+        // as a real, measured contributor to a live scan running dramatically
+        // slower than the scanner itself — hundreds of overlapping full-tree
+        // layouts piling up and competing with the scanner's own worker
+        // threads for the same CPU cores.
+        guard relayoutTask == nil else {
+            relayoutAgainAfter = true
+            return
+        }
+        runRelayout(rootNode: rootNode, size: size)
+    }
+
+    private func runRelayout(rootNode: FileNode, size: CGSize) {
         relayoutTask = Task {
             try? await Task.sleep(for: .milliseconds(80))
-            guard !Task.isCancelled else { return }
-            let computed = await Task.detached(priority: .userInitiated) {
-                TreemapLayout.layout(node: rootNode, in: CGRect(origin: .zero, size: size))
-            }.value
-            guard !Task.isCancelled else { return }
-            self.layout = computed
-            // The cached hover box may no longer correspond to anything at
-            // its old screen position under the new layout — drop it so the
-            // next hover tick (even a tiny one) re-hit-tests instead of
-            // trusting stale geometry.
-            self.hoveredBox = nil
+            if !Task.isCancelled {
+                let computed = await Task.detached(priority: .userInitiated) {
+                    TreemapLayout.layout(node: rootNode, in: CGRect(origin: .zero, size: size))
+                }.value
+                if !Task.isCancelled {
+                    self.layout = computed
+                    // The cached hover box may no longer correspond to
+                    // anything at its old screen position under the new
+                    // layout — drop it so the next hover tick (even a tiny
+                    // one) re-hit-tests instead of trusting stale geometry.
+                    self.hoveredBox = nil
+                }
+            }
+            self.relayoutTask = nil
+            if self.relayoutAgainAfter, let latestRoot = self.rootNode {
+                self.relayoutAgainAfter = false
+                self.runRelayout(rootNode: latestRoot, size: self.layoutSize)
+            }
         }
     }
 

@@ -129,6 +129,12 @@ public struct ExtensionSummaryView: NSViewRepresentable {
         private var rows: [ExtensionSummary] = []
         private var totalSize: UInt64 = 0
         private var recomputeTask: Task<Void, Never>?
+        /// Set when `scheduleRecompute` is called while a walk is already in
+        /// flight — guarantees one more pass runs once the current one
+        /// finishes, instead of dropping the trigger (which could otherwise
+        /// leave the view stuck showing pre-final data if the scan's very
+        /// last `treeVersion` bump lands while a walk is still running).
+        private var recomputeAgainAfter = false
 
         private var sortKey: SortKey = .size
         private var sortAscending = false
@@ -137,24 +143,51 @@ public struct ExtensionSummaryView: NSViewRepresentable {
         /// scan-progress `treeVersion` bumps, then walk the whole tree
         /// off-main so a large scan's extension breakdown never blocks the
         /// UI thread.
+        ///
+        /// Coalesces to at most one walk in flight at a time. `Task.cancel()`
+        /// on the previous `recomputeTask` alone doesn't stop wasted work —
+        /// `ExtensionBreakdown.compute` is a plain synchronous recursive
+        /// function with no cooperative cancellation checks, so a cancelled
+        /// `Task.detached` keeps running to completion regardless. During an
+        /// active scan `treeVersion` bumps roughly every 100ms, so without
+        /// this the previous (buggy) version could pile up hundreds of
+        /// overlapping full-tree walks over a long scan — a real, measured
+        /// cause of a live scan running dramatically slower than the scanner
+        /// itself, since every one of those walks competes with the
+        /// scanner's own worker threads for the same CPU cores.
         func scheduleRecompute(tableView: NSTableView) {
-            guard let rootNode else {
+            guard rootNode != nil else {
                 rows = []
                 totalSize = 0
                 tableView.reloadData()
                 return
             }
-            recomputeTask?.cancel()
+            guard recomputeTask == nil else {
+                recomputeAgainAfter = true
+                return
+            }
+            runRecompute(tableView: tableView)
+        }
+
+        private func runRecompute(tableView: NSTableView) {
             recomputeTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(80))
-                guard !Task.isCancelled else { return }
-                let computed = await Task.detached(priority: .userInitiated) {
-                    ExtensionBreakdown.compute(for: rootNode)
-                }.value
-                guard !Task.isCancelled, let self else { return }
-                self.rows = self.sorted(computed)
-                self.totalSize = rootNode.displaySize
-                tableView.reloadData()
+                if !Task.isCancelled, let self, let rootNode = self.rootNode {
+                    let computed = await Task.detached(priority: .userInitiated) {
+                        ExtensionBreakdown.compute(for: rootNode)
+                    }.value
+                    if !Task.isCancelled {
+                        self.rows = self.sorted(computed)
+                        self.totalSize = rootNode.displaySize
+                        tableView.reloadData()
+                    }
+                }
+                guard let self else { return }
+                self.recomputeTask = nil
+                if self.recomputeAgainAfter {
+                    self.recomputeAgainAfter = false
+                    self.runRecompute(tableView: tableView)
+                }
             }
         }
 
