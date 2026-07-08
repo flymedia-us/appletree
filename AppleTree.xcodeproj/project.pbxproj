@@ -180,6 +180,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Sam Friedman";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Apple Tree reads your Photos Library so a scan of your Pictures folder or whole disk can include its size.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Apple Tree reads your Downloads folder so a scan can include its size.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -206,6 +208,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Sam Friedman";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Apple Tree reads your Photos Library so a scan of your Pictures folder or whole disk can include its size.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Apple Tree reads your Downloads folder so a scan can include its size.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

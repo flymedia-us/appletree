@@ -158,10 +158,19 @@ final class AppState {
             guard let node = rootNode.descendant(atPath: change.path) else { continue }
             if change.stillExists {
                 externallyDeletedNodeIDs.remove(node.id)
+                // Recomputes ancestor sizes back up now that this node
+                // counts again — mirrors the in-app Trash path (see
+                // `FileNode.markRemoved()`'s doc comment) so a file
+                // recreated (or a delete undone) outside the app is
+                // reflected in the Tree View/Treemap/Extension Summary
+                // without a rescan.
+                node.unmarkRemoved()
             } else {
                 externallyDeletedNodeIDs.insert(node.id)
+                node.markRemoved()
             }
         }
+        bumpGeneration(force: true)
     }
 
     private func handle(_ event: ScanEvent) {
@@ -228,6 +237,15 @@ final class AppState {
     func dismissPermissionNudgePermanently() {
         UserDefaults.standard.set(true, forKey: Self.fdaNudgeDontAskAgainKey)
         isPermissionNudgeDismissed = true
+    }
+
+    /// Signals that the scanned tree was mutated outside the normal scan
+    /// pipeline — currently, `FileTreeView`'s own in-app Trash action. Bumps
+    /// `scanGeneration` so the Treemap and Extension Summary panes (which
+    /// only observe that counter, not `FileTreeView`'s internal state)
+    /// recompute and pick up the change too.
+    func notifyTreeMutated() {
+        bumpGeneration(force: true)
     }
 
     private func bumpGeneration(force: Bool = false) {

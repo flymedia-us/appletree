@@ -38,6 +38,7 @@ public enum TreemapLayout {
         options: TreemapLayoutOptions,
         into result: inout [TreemapNode]
     ) {
+        guard !node.isRemoved else { return }
         guard rect.width >= options.minBoxSize, rect.height >= options.minBoxSize else { return }
 
         let hasLabel = rect.width > options.labelMinWidth && rect.height > options.labelMinHeight
@@ -48,7 +49,12 @@ public enum TreemapLayout {
         let nodeIndex = result.count
         result.append(TreemapNode(source: node, rect: rect, labelRect: labelRect, depth: depth))
 
-        guard node.isDirectory, !node.children.isEmpty else { return }
+        // Excludes removed nodes: `node.displaySize` (used as `totalSize`
+        // below) already excludes them post-`markRemoved()`, so they must
+        // also be absent here — otherwise `layoutChildren` would split the
+        // rect using sizes that don't sum to its own `totalSize` parameter.
+        let visibleChildren = node.children.filter { !$0.isRemoved }
+        guard node.isDirectory, !visibleChildren.isEmpty else { return }
         if let maxDepth = options.maxDepth, depth >= maxDepth { return }
 
         let contentRect = hasLabel
@@ -57,7 +63,7 @@ public enum TreemapLayout {
 
         let countBeforeChildren = result.count
         layoutChildren(
-            node.children[...],
+            visibleChildren[...],
             totalSize: node.displaySize,
             in: contentRect,
             depth: depth + 1,

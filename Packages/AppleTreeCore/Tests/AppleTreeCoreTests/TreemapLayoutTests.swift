@@ -174,4 +174,27 @@ struct TreemapLayoutTests {
         #expect(result.contains { $0.source === mid })
         #expect(!result.contains { $0.source === leaf })
     }
+
+    @Test("a node marked removed gets no box of its own and doesn't skew its siblings' proportions")
+    func removedNodeIsExcludedFromLayout() {
+        let doomed = FileNode(name: "doomed", isDirectory: false, logicalSize: 900, allocatedSize: 900)
+        let survivor = FileNode(name: "survivor", isDirectory: false, logicalSize: 100, allocatedSize: 100)
+        let root = makeDirectory(name: "root", children: [doomed, survivor])
+        let rect = CGRect(x: 0, y: 0, width: 200, height: 200)
+        // No label reserved, to isolate the exclusion behavior from the
+        // label-inset behavior already covered elsewhere in this file.
+        let options = TreemapLayoutOptions(labelMinWidth: 10_000, labelMinHeight: 10_000)
+
+        doomed.markRemoved()
+        let result = TreemapLayout.layout(node: root, in: rect, options: options)
+
+        #expect(!result.contains { $0.source === doomed })
+        let survivorNode = try! #require(result.first { $0.source === survivor })
+        // With `doomed` excluded, `root.displaySize` is `survivor`'s alone,
+        // so `survivor` should claim the whole content rect rather than
+        // some fraction of it sized against a total that includes a box
+        // that's no longer drawn.
+        #expect(survivorNode.rect.width == rect.width)
+        #expect(survivorNode.rect.height == rect.height)
+    }
 }

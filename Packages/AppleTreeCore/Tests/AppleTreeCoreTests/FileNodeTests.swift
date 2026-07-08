@@ -114,4 +114,74 @@ struct FileNodeTests {
         #expect(root.descendant(atPath: "/Users/samfriedman/Downloads/Untitled copy.rtf") === file)
         #expect(root.descendant(atPath: "/Users/samfriedman/Downloads") === downloads)
     }
+
+    @Test("markRemoved excludes a node from every ancestor's aggregate, immediately, without a rescan")
+    func markRemovedRecomputesAncestors() {
+        let root = FileNode(name: "root", isDirectory: true)
+        let sub = FileNode(name: "sub", isDirectory: true)
+        let keep = FileNode(name: "keep.txt", isDirectory: false, allocatedSize: 100)
+        let doomed = FileNode(name: "doomed.txt", isDirectory: false, allocatedSize: 900)
+
+        root.addChild(sub)
+        sub.addChild(keep)
+        sub.addChild(doomed)
+        sub.finalizeAsDirectory()
+        root.finalizeAsDirectory()
+
+        #expect(root.allocatedSize == 1000)
+        #expect(root.fileCount == 2)
+
+        doomed.markRemoved()
+
+        // Both the immediate parent and its own parent (the root) drop the
+        // removed file's contribution — a removal several levels deep must
+        // propagate all the way up, not just to its direct parent.
+        #expect(sub.allocatedSize == 100)
+        #expect(sub.fileCount == 1)
+        #expect(root.allocatedSize == 100)
+        #expect(root.fileCount == 1)
+
+        // Still present in `children` (so the Tree View can keep showing it,
+        // struck through) — just excluded from the sums.
+        #expect(sub.children.map(\.name).contains("doomed.txt"))
+        #expect(doomed.isRemoved)
+    }
+
+    @Test("unmarkRemoved reverses markRemoved, restoring the node's contribution to every ancestor")
+    func unmarkRemovedRestoresAncestors() {
+        let root = FileNode(name: "root", isDirectory: true)
+        let file = FileNode(name: "file.txt", isDirectory: false, allocatedSize: 500)
+        root.addChild(file)
+        root.finalizeAsDirectory()
+
+        file.markRemoved()
+        #expect(root.allocatedSize == 0)
+
+        file.unmarkRemoved()
+        #expect(root.allocatedSize == 500)
+        #expect(root.fileCount == 1)
+        #expect(!file.isRemoved)
+    }
+
+    @Test("markRemoved on a directory excludes its whole subtree from ancestor aggregates")
+    func markRemovedOnDirectoryExcludesSubtree() {
+        let root = FileNode(name: "root", isDirectory: true)
+        let doomedDir = FileNode(name: "doomed", isDirectory: true)
+        let nested = FileNode(name: "nested.txt", isDirectory: false, allocatedSize: 700)
+        let survivor = FileNode(name: "survivor.txt", isDirectory: false, allocatedSize: 50)
+
+        root.addChild(doomedDir)
+        root.addChild(survivor)
+        doomedDir.addChild(nested)
+        doomedDir.finalizeAsDirectory()
+        root.finalizeAsDirectory()
+
+        #expect(root.allocatedSize == 750)
+
+        doomedDir.markRemoved()
+
+        #expect(root.allocatedSize == 50)
+        #expect(root.fileCount == 1)
+        #expect(root.folderCount == 0)
+    }
 }

@@ -77,4 +77,19 @@ struct ExtensionBreakdownTests {
     func uncuratedExtensionFallsBack() {
         #expect(FileTypeNaming.displayName(forExtension: "xyzabc") == "XYZABC File")
     }
+
+    @Test("a node marked removed (moved to Trash, or found gone externally) is excluded from the breakdown")
+    func removedNodeIsExcluded() {
+        let doomed = makeFile(name: "clip.mp4", size: 100)
+        let root = makeDirectory(name: "root", children: [
+            doomed,
+            makeFile(name: "photo.jpg", size: 10)
+        ])
+
+        doomed.markRemoved()
+        let summaries = ExtensionBreakdown.compute(for: root)
+
+        #expect(summaries.count == 1)
+        #expect(summaries[0].fileExtension == "jpeg")
+    }
 }

@@ -75,6 +75,15 @@ public final class FileNode: @unchecked Sendable {
 
     public weak var parent: FileNode?
 
+    /// Set once this node is confirmed gone (moved to Trash in-app, or found
+    /// missing by the external-change watch) — excluded from every ancestor's
+    /// aggregate size/count and from the extension breakdown/treemap from
+    /// that point on, without waiting for a rescan. Left in `children` (not
+    /// removed from the array) so the Tree View can still show it, struck
+    /// through, at its last-known position; only the roll-up math and other
+    /// views' rendering skip it. See `markRemoved()`.
+    public internal(set) var isRemoved = false
+
     public init(
         name: String,
         isDirectory: Bool,
@@ -192,7 +201,11 @@ extension FileNode {
 
     /// Recomputes `logicalSize`/`allocatedSize`/`fileCount`/`folderCount` from
     /// `children` and sorts `children` descending by `displaySize`. Called
-    /// once a directory's immediate scan work is done.
+    /// once a directory's immediate scan work is done, and again by
+    /// `markRemoved()`/`unmarkRemoved()` to reflect a post-scan removal.
+    /// Children flagged `isRemoved` keep their place in the sorted array
+    /// (for the Tree View's strikethrough row) but contribute nothing to
+    /// the sums.
     func finalizeAsDirectory() {
         let sortedChildren = childrenLock.withLock { state -> [FileNode] in
             state.sort { $0.displaySize > $1.displaySize }
@@ -203,7 +216,7 @@ extension FileNode {
         var allocated: UInt64 = 0
         var files = 0
         var folders = 0
-        for child in sortedChildren {
+        for child in sortedChildren where !child.isRemoved {
             logical += child.logicalSize
             allocated += child.allocatedSize
             if child.isDirectory {
@@ -217,5 +230,39 @@ extension FileNode {
         allocatedSize = allocated
         fileCount = files
         folderCount = folders
+    }
+
+    /// Recomputes every ancestor's aggregate from `self` up to the root —
+    /// the shared step both `markRemoved()` and `unmarkRemoved()` need,
+    /// since either one changes what its parent's (and *its* parent's, ...)
+    /// sums should add up to.
+    private func refinalizeAncestors() {
+        var ancestor = parent
+        while let node = ancestor {
+            node.finalizeAsDirectory()
+            ancestor = node.parent
+        }
+    }
+}
+
+extension FileNode {
+    /// Marks this node (file or whole subtree) as gone — moved to Trash by
+    /// this app, or found missing by the external-change watch — and
+    /// immediately recomputes every ancestor's size/count so the Tree
+    /// View's parent rows, the treemap, and the extension breakdown all
+    /// reflect the removal without waiting for a rescan. See `isRemoved`.
+    public func markRemoved() {
+        guard !isRemoved else { return }
+        isRemoved = true
+        refinalizeAncestors()
+    }
+
+    /// Reverses `markRemoved()` — for the external-change watch's "this path
+    /// exists again" case (e.g. a file recreated, or a Trash action undone
+    /// outside the app).
+    public func unmarkRemoved() {
+        guard isRemoved else { return }
+        isRemoved = false
+        refinalizeAncestors()
     }
 }

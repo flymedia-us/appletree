@@ -1,52 +1,70 @@
-#  Apple Tree
+# Apple Tree
 
-An upcoming high-speed disk space analyzer for macOS, inspired by the speed of **WizTree** on Windows and built with references to **GrandPerspective**.
+A high-speed disk space analyzer for macOS, inspired by the speed of **WizTree** on Windows and the visualization style of **GrandPerspective**.
 
----
-
-## 👁️ Project Vision
-
-**Apple Tree** aims to solve a common pain point for macOS users: scanning large drives for disk space usage is often slow and resource-intensive. 
-
-On Windows, **WizTree** achieves near-instantaneous scans by reading the Master File Table (MFT) directly from NTFS drives, bypassing slow operating system APIs. 
-
-**Apple Tree**'s mission is to bring that class of performance to macOS by:
-1. **Low-Level APFS Scanning**: Leveraging fast, low-level macOS file system interfaces (such as `getattrlistbulk(2)`, `getdirentries`, and multi-threaded traversal) to query Apple File System (APFS) metadata as rapidly as possible.
-2. **Interactive Treemap Visualization**: Providing a gorgeous, interactive treemap representation of disk usage, allowing users to immediately spot and manage large files and directories.
-3. **Modern macOS Experience**: Featuring a native SwiftUI interface designed for modern macOS, complete with a clean dark mode, responsive layouts, smooth animations, and intuitive controls.
+Apple Tree scans a folder or whole volume with a parallel, native `fts(3)`-based traversal and shows the result three ways at once — an expandable size-sorted outline, a flat breakdown by file extension, and an interactive treemap — all kept in sync with each other as you select, hover, and delete.
 
 ---
 
-## 📂 Current Repository Structure
+## Status
 
-The project is currently in the **research and planning phase**. 
+Pre-release. Scanning, all three views, deletion, and Quick Look integration work end-to-end against real volumes. Not yet on the App Store — see [Known limitations](#known-limitations) below.
 
-* **[GrandPerspective-3_7_2](GrandPerspective-3_7_2)**: A copy of the source code for GrandPerspective (v3.7.2), a mature, GPL-licensed disk usage visualizer for macOS. We are keeping this in the repository as a key reference for:
-  - Treemap layout algorithms (e.g., squarified treemaps).
-  - Legacy Cocoa file system interaction patterns.
-  - Scan result caching and filtering logic.
+## Features
 
----
+- **Fast parallel scanning** — a worker-pool `fts(3)` traversal (see [`DirectoryScanner`](Packages/AppleTreeCore/Sources/AppleTreeCore/Scanning/DirectoryScanner.swift)) that stays on one device, dedups hardlinks/APFS clones and firmlink-joined directories (e.g. `/Users` vs. `/System/Volumes/Data/Users`), and streams incremental progress rather than blocking until the whole tree is walked.
+- **Tree View** — an `NSOutlineView`-backed, sortable outline (Folder, % of Parent, Size, Logical Size, Files, Folders, Modified), matching WizTree's default size-descending order.
+- **Treemap** — a labeled, ordered treemap colored by file type, with hover tooltips and click-to-select synced against the Tree View.
+- **Extension Summary** — a flat, whole-scan breakdown by file extension (color, type name, percent, size, file count).
+- **Delete to Trash** — from either the Tree View's context menu or ⌘⌫, with an immediate struck-through row and recomputed parent/treemap/extension totals (no rescan needed).
+- **Quick Look** — Space bar to preview the selected file, Finder-style.
+- **Live external-change detection** — an `FSEventStream` watch flags files deleted or moved out from under a completed scan by Finder, Terminal, or any other process.
+- **Full Disk Access awareness** — scans classify *why* a folder was skipped (TCC-gated, root-owned/system-protected, plain permission-denied, or other) and nudge for Full Disk Access only when it would actually help.
+- **Volume capacity readout** — Total/Used/Reserved/Free for the scanned volume, independent of the scan's own tree total.
 
-## 🛠️ Proposed Tech Stack
+## Known limitations
 
-* **Language**: Swift (for UI and safety) coupled with C/Objective-C where low-level system call wrappers are required.
-* **UI Framework**: SwiftUI (targeting modern macOS versions) for a sleek, responsive, and native aesthetic.
-* **Scan Engine**: Multi-threaded scanner optimized for SSDs and APFS container structures.
-* **Render Pipeline**: Metal or Core Graphics for fluid, 60fps zooming and panning across millions of files in the treemap.
+- **DUNS/Apple Developer Program enrollment is pending** — the app isn't notarized or code-signed for distribution yet, and there's no App Store listing.
+- **macOS 26.0+ only.** The deployment target tracks the very latest macOS; this is a deliberate choice for now but sharply limits who can currently run the app. Worth revisiting before a public launch if broader compatibility matters.
+- **Placeholder app icon.** [`AppIcon.appiconset`](AppleTree/Assets.xcassets/AppIcon.appiconset) has a temporary icon, not a final one.
+- **No promotional site or privacy policy yet** — planned as a separate, lightweight website, out of scope for this repository.
 
----
+## Project structure
 
-## 🗺️ Roadmap & Next Steps
+```
+AppleTree/                    App target (SwiftUI shell, AppState, entitlements)
+Packages/AppleTreeCore/       Scanning engine, FileNode model, categorization, treemap layout — no UI/framework dependencies
+Packages/AppleTreeUI/         AppKit-backed views (Tree View, Treemap, Extension Summary) as SwiftUI NSViewRepresentables
+GrandPerspective-3_7_2/       Vendored GPL-licensed reference source, for reading (treemap layout shape, legacy scan patterns) — not compiled into the app; see its own COPYING.txt
+WizTree_REFERENCE/            A reference screenshot of WizTree's UI
+docs/wiztree-research.md      Research notes on WizTree's/GrandPerspective's UI and scanning approach that informed this design
+```
 
-- [ ] **APFS Performance Benchmarking**: Prototype different scanning methods (`NSFileManager`, C-level `fts`, and `getattrlistbulk`) to identify the fastest scanning path on modern Apple Silicon and APFS.
-- [ ] **Core Scanner Architecture**: Build a high-performance, cancellable, and thread-safe scanning engine that builds a lightweight in-memory tree of the file system.
-- [ ] **Modern UI Design**: Design a sleek, premium dark-mode interface in SwiftUI, featuring a visual breakdown bar and searchable file lists.
-- [ ] **Treemap Port/Modernization**: Adapt and optimize the tree-mapping drawing algorithm from GrandPerspective to render cleanly in modern SwiftUI/Metal views.
-- [ ] **File Operations**: Add support for quick actions (Reveal in Finder, Quick Look, Move to Trash).
+`AppleTreeCore` is deliberately framework-free (no AppKit/SwiftUI) so the scanning engine and layout algorithm stay unit-testable and reusable; `AppleTreeUI` is where all the AppKit/SwiftUI integration lives.
 
----
+## Building
 
-## 📄 License
+Requires Xcode 26+ (Swift 6.2 toolchain) and macOS 26+.
 
-As this project references GrandPerspective, any derivative work or components leveraging GPL-licensed code from GrandPerspective will comply with the **GNU General Public License**. See [GrandPerspective COPYING.txt](GrandPerspective-3_7_2/COPYING.txt) for details.
+```sh
+open AppleTree.xcodeproj
+```
+
+Build and run the **AppleTree** scheme. The project file is checked in and buildable as-is; [`project.yml`](project.yml) exists only so the project can be regenerated with [XcodeGen](https://github.com/yonaskolb/XcodeGen) after adding/removing files (`xcodegen generate`).
+
+## Testing
+
+Each Swift package has its own test suite:
+
+```sh
+cd Packages/AppleTreeCore && swift test
+cd Packages/AppleTreeUI && swift test
+```
+
+or run them from Xcode with the `AppleTreeCore`/`AppleTreeUI` schemes (⌘U).
+
+`Packages/AppleTreeCore/Sources/ScanBench` is a small CLI benchmarking harness (`swift run scanbench [path]`) for manually timing/verifying the scanner against real folders — not part of the shipping app, not covered by tests.
+
+## License
+
+No license has been chosen yet for Apple Tree's own source (all rights reserved by default). The vendored [`GrandPerspective-3_7_2`](GrandPerspective-3_7_2) sources remain under the GNU GPL v2 — see [its own `COPYING.txt`](GrandPerspective-3_7_2/COPYING.txt) — and are kept purely as a design reference; no code from it is compiled into or shipped with Apple Tree.

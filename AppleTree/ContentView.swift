@@ -27,7 +27,8 @@ struct ContentView: View {
                         selection: appState.selection,
                         treeVersion: appState.scanGeneration,
                         isScanning: appState.isScanning,
-                        externallyDeletedNodeIDs: appState.externallyDeletedNodeIDs
+                        externallyDeletedNodeIDs: appState.externallyDeletedNodeIDs,
+                        onTreeMutated: appState.notifyTreeMutated
                     )
                         .frame(minWidth: 320)
                         // `HSplitView` doesn't expose a percentage-based
@@ -130,18 +131,30 @@ private struct VolumeInfoView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text("Selection: ") + Text(selectionName).bold()
-            Text("Total Space: ") + Text(SizeFormatting.string(for: info.totalBytes)).bold()
+            Self.label("Selection: ", value: selectionName)
+            Self.label("Total Space: ", value: SizeFormatting.string(for: info.totalBytes))
             HStack(spacing: 8) {
-                Text("Space Used: ") + Text("\(SizeFormatting.string(for: info.usedBytes)) (\(SizeFormatting.percentString(for: info.usedFraction)))").bold()
+                Self.label("Space Used: ", value: "\(SizeFormatting.string(for: info.usedBytes)) (\(SizeFormatting.percentString(for: info.usedFraction)))")
                 if info.reservedBytes > 0 {
-                    Text("Reserved Space: ") + Text(SizeFormatting.string(for: info.reservedBytes)).bold()
+                    Self.label("Reserved Space: ", value: SizeFormatting.string(for: info.reservedBytes))
                 }
             }
-            Text("Space Free: ") + Text("\(SizeFormatting.string(for: info.freeBytes)) (\(SizeFormatting.percentString(for: info.freeFraction)))").bold()
+            Self.label("Space Free: ", value: "\(SizeFormatting.string(for: info.freeBytes)) (\(SizeFormatting.percentString(for: info.freeFraction)))")
         }
         .font(.body)
         .lineLimit(1)
+    }
+
+    /// A plain label followed by a bolded value, built from an
+    /// `AttributedString` rather than `Text` concatenation (deprecated) or
+    /// markdown interpolation — `value` can be an arbitrary filesystem path,
+    /// and markdown interpolation would misrender one containing `*`/`_`.
+    private static func label(_ label: String, value: String) -> Text {
+        var result = AttributedString(label)
+        var boldValue = AttributedString(value)
+        boldValue.font = .body.bold()
+        result += boldValue
+        return Text(result)
     }
 }
 

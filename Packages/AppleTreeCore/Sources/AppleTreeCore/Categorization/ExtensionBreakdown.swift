@@ -29,6 +29,7 @@ public enum ExtensionBreakdown {
         var countByExtension: [String: Int] = [:]
 
         func walk(_ node: FileNode) {
+            guard !node.isRemoved else { return }
             if node.isDirectory {
                 for child in node.children { walk(child) }
                 return

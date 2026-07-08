@@ -31,19 +31,27 @@ public struct FileTreeView: NSViewRepresentable {
     /// `Coordinator.deletedNodeIDs`), just sourced from outside instead of
     /// from this view's own Delete action.
     public var externallyDeletedNodeIDs: Set<FileNode.ID>
+    /// Called after this view's own Delete action marks a node removed
+    /// (`FileNode.markRemoved()`) and updates its own rows. The Treemap and
+    /// Extension Summary panes don't observe this view's internal state —
+    /// they only react to `treeVersion` — so the app layer needs this signal
+    /// to bump that counter and bring them back in sync too.
+    public var onTreeMutated: (() -> Void)?
 
     public init(
         rootNode: FileNode?,
         selection: SelectionModel,
         treeVersion: Int,
         isScanning: Bool,
-        externallyDeletedNodeIDs: Set<FileNode.ID> = []
+        externallyDeletedNodeIDs: Set<FileNode.ID> = [],
+        onTreeMutated: (() -> Void)? = nil
     ) {
         self.rootNode = rootNode
         self.selection = selection
         self.treeVersion = treeVersion
         self.isScanning = isScanning
         self.externallyDeletedNodeIDs = externallyDeletedNodeIDs
+        self.onTreeMutated = onTreeMutated
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
@@ -143,6 +151,8 @@ public struct FileTreeView: NSViewRepresentable {
     public func updateNSView(_ scrollView: NSScrollView, context: Context) {
         let coordinator = context.coordinator
         guard let outlineView = coordinator.outlineView else { return }
+
+        coordinator.onTreeMutated = onTreeMutated
 
         let isNewRoot = coordinator.rootNode !== rootNode
         if isNewRoot {
@@ -258,6 +268,7 @@ public struct FileTreeView: NSViewRepresentable {
         var lastFullResort: ContinuousClock.Instant = .now
         weak var outlineView: NSOutlineView?
         let selection: SelectionModel
+        var onTreeMutated: (() -> Void)?
         private var isSyncingSelection = false
 
         private var sortKey: SortKey?
@@ -524,7 +535,23 @@ public struct FileTreeView: NSViewRepresentable {
         private func markDeleted(_ id: FileNode.ID) {
             deletedNodeIDs.insert(id)
             guard let outlineView, let node = findNode(withID: id, in: rootNode) else { return }
+            // Recomputes every ancestor's size/count so the Tree View's own
+            // parent rows, the treemap, and the extension breakdown all
+            // reflect the removal immediately rather than only after a
+            // rescan — see `FileNode.markRemoved()`.
+            node.markRemoved()
             outlineView.reloadItem(node)
+            // `reloadItem` above only repaints `node`'s own row; every
+            // ancestor's Size/% of Parent/Files/Folders cells just changed
+            // too (that's what `markRemoved()` recomputed) and need their
+            // own repaint, or they'd keep showing pre-removal totals until
+            // some unrelated reload happened to touch them.
+            var ancestor = node.parent
+            while let current = ancestor {
+                outlineView.reloadItem(current)
+                ancestor = current.parent
+            }
+            onTreeMutated?()
         }
 
         // MARK: Sorting
