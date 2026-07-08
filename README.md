@@ -25,7 +25,6 @@ Pre-release. Scanning, all three views, deletion, and Quick Look integration wor
 ## Known limitations
 
 - **DUNS/Apple Developer Program enrollment is pending** — the app isn't notarized or code-signed for distribution yet, and there's no App Store listing.
-- **macOS 26.0+ only.** The deployment target tracks the very latest macOS; this is a deliberate choice for now but sharply limits who can currently run the app. Worth revisiting before a public launch if broader compatibility matters.
 - **Placeholder app icon.** [`AppIcon.appiconset`](AppleTree/Assets.xcassets/AppIcon.appiconset) has a temporary icon, not a final one.
 - **No promotional site or privacy policy yet** — planned as a separate, lightweight website, out of scope for this repository.
 
@@ -44,7 +43,7 @@ docs/wiztree-research.md      Research notes on WizTree's/GrandPerspective's UI 
 
 ## Building
 
-Requires Xcode 26+ (Swift 6.2 toolchain) and macOS 26+.
+Requires Xcode 26+ (Swift 6.2 toolchain) to build; the app itself targets macOS 15+ at runtime.
 
 ```sh
 open AppleTree.xcodeproj
