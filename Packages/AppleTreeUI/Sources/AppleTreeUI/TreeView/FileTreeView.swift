@@ -183,12 +183,30 @@ public struct FileTreeView: NSViewRepresentable {
                 // A brand new tree invalidates row/parent-child bookkeeping
                 // wholesale, so a full reload is the only correct option here.
                 outlineView.reloadData()
+                coordinator.lastFullResort = .now
                 if let rootNode {
                     outlineView.expandItem(rootNode)
                 }
             } else if let rootNode {
                 if justFinishedScanning {
                     outlineView.reloadData()
+                    coordinator.lastFullResort = .now
+                } else if isScanning, ContinuousClock.now - coordinator.lastFullResort > .seconds(1) {
+                    // Periodically re-sort during an active scan too, not just
+                    // once at the end. A directory's size (and so its place in
+                    // the default size-descending order) keeps changing as the
+                    // scan progresses, but `reloadItem` below never re-orders
+                    // already-materialized rows — only their cell values —
+                    // so without this the Tree View's ordering would visibly
+                    // stall for the scan's entire duration while the Extension
+                    // Summary pane (which recomputes and re-sorts fresh every
+                    // pass) keeps reflecting reality. Throttled to once a
+                    // second rather than every ~100ms `treeVersion` bump —
+                    // that was tried and was disruptive enough to interfere
+                    // with the user's own disclosure-triangle clicks (see the
+                    // `reloadItem` branch below).
+                    outlineView.reloadData()
+                    coordinator.lastFullResort = .now
                 } else {
                     // An in-progress scan bumps `treeVersion` roughly every
                     // 100ms; `reloadData()` on every one of those was disruptive
@@ -203,6 +221,7 @@ public struct FileTreeView: NSViewRepresentable {
                 }
             } else {
                 outlineView.reloadData()
+                coordinator.lastFullResort = .now
             }
         }
 
@@ -233,6 +252,10 @@ public struct FileTreeView: NSViewRepresentable {
         var rootNode: FileNode?
         var lastTreeVersion = -1
         var lastIsScanning = false
+        /// Throttle for the periodic full re-sort during an active scan —
+        /// see `updateNSView`'s doc comment on why this exists alongside
+        /// the far more frequent `reloadItem` path.
+        var lastFullResort: ContinuousClock.Instant = .now
         weak var outlineView: NSOutlineView?
         let selection: SelectionModel
         private var isSyncingSelection = false
