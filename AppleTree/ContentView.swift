@@ -63,7 +63,7 @@ struct ContentView: View {
                     .accessibilityHint("Visual map of disk usage by file size. Selection follows the Tree View.")
             }
         }
-        .frame(minWidth: 800, minHeight: 480)
+        .frame(minWidth: 800, idealWidth: 1200, minHeight: 480, idealHeight: 800)
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             guard !appState.isScanning else { return false }
             return handleFolderDrop(providers)

@@ -14,7 +14,11 @@ struct AppleTreeApp: App {
             ContentView(appState: appState)
                 .preferredColorScheme(preferredScheme)
         }
-        .windowResizability(.contentSize)
+        // Ideal size for a fresh window; `.contentMinSize` keeps the
+        // ContentView min frame as a floor while still allowing free enlarge.
+        // (`.contentSize` with only minWidth/minHeight collapses to that min.)
+        .defaultSize(width: 1200, height: 800)
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open Folder…") {
