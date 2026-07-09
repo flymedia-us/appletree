@@ -1,8 +1,11 @@
 import AppKit
 import AppleTreeCore
 import AppleTreeUI
+import os
 import SwiftUI
 import UniformTypeIdentifiers
+
+private let log = Logger(subsystem: "com.samfriedman.AppleTree", category: "ContentView")
 
 struct ContentView: View {
     var appState: AppState
@@ -80,8 +83,7 @@ struct ContentView: View {
         guard let root = appState.rootNode else {
             return "No scan loaded"
         }
-        if let selectedID = appState.selection.selectedNodeID,
-           let selected = root.descendant(withID: selectedID) {
+        if let selected = appState.selection.selectedNode {
             return "\(selected.name), \(SizeFormatting.string(for: selected.displaySize))"
         }
         return "\(root.name), \(SizeFormatting.string(for: root.displaySize))"
@@ -161,10 +163,16 @@ struct ContentView: View {
             } else {
                 url = nil
             }
-            guard let url else { return }
+            guard let url else {
+                log.debug("Ignored drop: item was not a resolvable file URL")
+                return
+            }
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
-                  isDirectory.boolValue else { return }
+                  isDirectory.boolValue else {
+                log.debug("Ignored drop of non-directory: \(url.path, privacy: .public)")
+                return
+            }
             Task { @MainActor in
                 appState.startScan(root: url)
             }

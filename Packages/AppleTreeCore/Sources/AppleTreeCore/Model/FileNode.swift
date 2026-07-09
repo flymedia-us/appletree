@@ -81,10 +81,16 @@ public final class FileNode: @unchecked Sendable {
     /// `append` finds the buffer not uniquely referenced and copies instead
     /// of mutating storage the reader might be iterating.
     public var children: [FileNode] {
-        childrenLock.withLock { $0 }
+        childrenLock?.withLock { $0 } ?? []
     }
 
-    private let childrenLock = OSAllocatedUnfairLock<[FileNode]>(initialState: [])
+    /// Allocated only for directories. A file is always a leaf, so it would
+    /// never hold anything but an empty array — and `OSAllocatedUnfairLock`
+    /// is its own heap allocation, so on a file-dominated tree (the common
+    /// case: a whole-disk scan is overwhelmingly files) skipping it for every
+    /// file roughly halves the scanner's total lock allocations. `nil` reads
+    /// as "no children" everywhere below.
+    private let childrenLock: OSAllocatedUnfairLock<[FileNode]>?
 
     public internal(set) var category: FileCategory
 
@@ -125,6 +131,7 @@ public final class FileNode: @unchecked Sendable {
     ) {
         self.name = name
         self.isDirectory = isDirectory
+        self.childrenLock = isDirectory ? OSAllocatedUnfairLock(initialState: []) : nil
         self.aggregateLock = OSAllocatedUnfairLock(initialState: Aggregate(
             logicalSize: logicalSize,
             allocatedSize: allocatedSize,
@@ -234,7 +241,10 @@ extension FileNode {
     /// counts on `self` — callers finalize those once all children are known.
     func addChild(_ child: FileNode) {
         child.parent = self
-        childrenLock.withLock { $0.append(child) }
+        // `childrenLock` is non-nil for every directory, and only directories
+        // are ever `addChild`ed into (the scanner's `currentParent` is always
+        // a directory); the `?.` is just belt-and-suspenders for the leaf case.
+        childrenLock?.withLock { $0.append(child) }
         aggregateLock.withLock { state in
             if child.isDirectory {
                 state.folderCount += 1
@@ -252,6 +262,10 @@ extension FileNode {
     /// (for the Tree View's strikethrough row) but contribute nothing to
     /// the sums.
     func finalizeAsDirectory() {
+        // A file has no `childrenLock` and nothing to finalize — its aggregate
+        // was set once at init. (Callers only invoke this on directories; this
+        // guard makes the leaf case a safe no-op rather than a trap.)
+        guard let childrenLock else { return }
         let sortedChildren = childrenLock.withLock { state -> [FileNode] in
             state.sort { $0.displaySize > $1.displaySize }
             return state

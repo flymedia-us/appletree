@@ -2,6 +2,9 @@ import AppKit
 import AppleTreeCore
 import AppleTreeUI
 import Foundation
+import os
+
+private let log = Logger(subsystem: "com.samfriedman.AppleTree", category: "AppState")
 
 struct SkippedFolder: Identifiable {
     let id = UUID()
@@ -63,6 +66,13 @@ final class AppState {
         case extensionSummary
     }
     private var awaitedVisualizationComponents: Set<VisualizationComponent> = []
+
+    /// The `scanGeneration` value in effect when the current load began
+    /// (`.finished`). A pane reporting it has rendered *this or any newer*
+    /// generation is proof its on-screen content is post-`.finished`, which
+    /// is what `isLoadingTree` actually waits on — see
+    /// `markVisualizationRendered`.
+    private var loadingGeneration = 0
 
     static let fdaNudgeDontAskAgainKey = "com.samfriedman.AppleTree.fdaNudgeDismissed"
     static let confirmBeforeDeleteKey = "com.samfriedman.AppleTree.confirmBeforeDelete"
@@ -152,7 +162,8 @@ final class AppState {
         volumeInfo = VolumeInfo.forVolume(containing: root)
         skippedFolderSample = []
         externallyDeletedNodeIDs = []
-        selection.selectedNodeID = nil
+        selection.selectedNode = nil
+        selection.hoveredNode = nil
 
         // Sandboxed apps only retain access to an `NSOpenPanel`-chosen
         // directory for the duration of `startAccessingSecurityScopedResource`
@@ -184,6 +195,7 @@ final class AppState {
     /// Surfaces a Trash failure in the toolbar error slot — Delete used to
     /// fail silently, which is unacceptable for a destructive disk utility.
     func reportDeleteFailure(_ error: Error) {
+        log.error("Trash failed: \(error.localizedDescription, privacy: .public)")
         errorMessage = "Couldn't move to Trash: \(error.localizedDescription)"
     }
 
@@ -282,6 +294,7 @@ final class AppState {
             lastScanDuration = duration
             currentPath = nil
             bumpGeneration(force: true)
+            loadingGeneration = scanGeneration
             startWatchingForExternalChanges()
             // `isLoadingTree` flips back to false once both panes report
             // rendering this generation — see `treemapDidFinishRendering`/
@@ -289,6 +302,7 @@ final class AppState {
 
         case .failed(let error):
             isScanning = false
+            log.error("Scan failed: \(error.localizedDescription, privacy: .public)")
             errorMessage = error.localizedDescription
         }
     }
@@ -323,13 +337,18 @@ final class AppState {
         markVisualizationRendered(.extensionSummary, version: version)
     }
 
-    /// Ignores a report that doesn't match the generation `.finished` is
-    /// currently waiting on — either a stale report left over from an
-    /// interim mid-scan relayout (`isLoadingTree` is false then, since it
-    /// only becomes true starting at `.finished`), or, in principle, one
-    /// from a generation a newer scan has already superseded.
+    /// Ignores a stale report left over from an interim mid-scan relayout
+    /// (`isLoadingTree` is false then, since it only becomes true starting at
+    /// `.finished`). Accepts any report at or beyond `loadingGeneration`
+    /// rather than an exact `scanGeneration` match: a delete or an
+    /// external-change bump landing in the load window advances
+    /// `scanGeneration` past what the panes are settling on, and an `==`
+    /// check would then reject every subsequent report and leave the
+    /// "Loading tree…" spinner stuck forever. A pane that has rendered the
+    /// load generation *or newer* has, by definition, drawn post-`.finished`
+    /// content — which is exactly what this gate exists to confirm.
     private func markVisualizationRendered(_ component: VisualizationComponent, version: Int) {
-        guard isLoadingTree, version == scanGeneration else { return }
+        guard isLoadingTree, version >= loadingGeneration else { return }
         awaitedVisualizationComponents.remove(component)
         if awaitedVisualizationComponents.isEmpty {
             isLoadingTree = false

@@ -2,7 +2,7 @@ name: AppleTree
 options:
   bundleIdPrefix: com.samfriedman
   deploymentTarget:
-    macOS: "26.0"
+    macOS: "15.0"
   createIntermediateGroups: true
 
 packages:

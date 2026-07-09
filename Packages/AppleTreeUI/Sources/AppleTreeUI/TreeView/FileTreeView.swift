@@ -422,7 +422,7 @@ public struct FileTreeView: NSViewRepresentable {
             guard !isSyncingSelection, let outlineView else { return }
             let row = outlineView.selectedRow
             let node = row >= 0 ? outlineView.item(atRow: row) as? FileNode : nil
-            selection.selectedNodeID = node?.id
+            selection.selectedNode = node
 
             // Mirrors Finder: while Quick Look is open, arrowing to a new
             // selection updates the preview in place rather than requiring
@@ -552,7 +552,6 @@ public struct FileTreeView: NSViewRepresentable {
             if confirmBeforeDelete, !confirmDelete(of: node) { return }
 
             let path = node.path
-            let nodeID = node.id
             Task {
                 do {
                     // `FileManager.trashItem` is a blocking syscall — usually
@@ -562,7 +561,7 @@ public struct FileTreeView: NSViewRepresentable {
                     try await Task.detached(priority: .userInitiated) {
                         try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil)
                     }.value
-                    markDeleted(nodeID)
+                    markDeleted(node)
                 } catch {
                     // Left unmarked/un-struck-through on failure (e.g.
                     // permission denied, already moved externally) — the row
@@ -585,9 +584,9 @@ public struct FileTreeView: NSViewRepresentable {
             return alert.runModal() == .alertFirstButtonReturn
         }
 
-        private func markDeleted(_ id: FileNode.ID) {
-            deletedNodeIDs.insert(id)
-            guard let outlineView, let node = findNode(withID: id, in: rootNode) else { return }
+        private func markDeleted(_ node: FileNode) {
+            deletedNodeIDs.insert(node.id)
+            guard let outlineView else { return }
             // Recomputes every ancestor's size/count so the Tree View's own
             // parent rows, the treemap, and the extension breakdown all
             // reflect the removal immediately rather than only after a
@@ -683,11 +682,14 @@ public struct FileTreeView: NSViewRepresentable {
 
         func syncSelectionFromModel() {
             guard let outlineView else { return }
-            let targetID = selection.selectedNodeID
+            // The model stores the resolved node directly, so the tree can
+            // pick it up by reference — no `findNode` full-tree walk needed
+            // on every treemap tap (the nodes are shared across panes).
+            let target = selection.selectedNode
             let currentRow = outlineView.selectedRow
-            let currentID = currentRow >= 0 ? (outlineView.item(atRow: currentRow) as? FileNode)?.id : nil
-            guard currentID != targetID else { return }
-            guard let targetID, let target = findNode(withID: targetID, in: rootNode) else { return }
+            let currentSelection = currentRow >= 0 ? outlineView.item(atRow: currentRow) as? FileNode : nil
+            guard currentSelection !== target else { return }
+            guard let target else { return }
 
             isSyncingSelection = true
             defer { isSyncingSelection = false }

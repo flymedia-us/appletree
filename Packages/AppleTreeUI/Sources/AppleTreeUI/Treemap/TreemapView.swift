@@ -60,7 +60,7 @@ public struct TreemapView: View {
             .onChange(of: rootNode?.id) { _, _ in relayout(size: proxy.size) }
             .gesture(
                 SpatialTapGesture().onEnded { value in
-                    selection.selectedNodeID = TreemapHitTester.hitTest(value.location, in: layout)?.source.id
+                    selection.selectedNode = TreemapHitTester.hitTest(value.location, in: layout)?.source
                 }
             )
             .onContinuousHover { phase in
@@ -83,10 +83,10 @@ public struct TreemapView: View {
                     }
                     let hit = TreemapHitTester.hitTest(location, in: layout)
                     hoveredBox = hit
-                    selection.hoveredNodeID = hit?.source.id
+                    selection.hoveredNode = hit?.source
                 case .ended:
                     hoveredBox = nil
-                    selection.hoveredNodeID = nil
+                    selection.hoveredNode = nil
                 }
             }
             .background(Self.backgroundColor)

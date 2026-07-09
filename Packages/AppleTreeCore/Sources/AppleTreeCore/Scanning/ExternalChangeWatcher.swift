@@ -18,6 +18,8 @@ import os
 /// worth trusting is a fresh `stat` of the reported path at the moment the
 /// callback fires — self-correcting regardless of exactly which events did
 /// or didn't make it through.
+private let log = Logger(subsystem: "com.samfriedman.AppleTree", category: "ExternalChangeWatcher")
+
 public final class ExternalChangeWatcher: @unchecked Sendable {
     public struct PathChange: Sendable {
         public let path: String
@@ -94,7 +96,15 @@ public final class ExternalChangeWatcher: @unchecked Sendable {
             FSEventStreamCreateFlags(
                 kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer
             )
-        ) else { return }
+        ) else {
+            // The post-scan live watch simply won't run — externally deleted
+            // paths won't be flagged until the next scan. Not fatal, but
+            // silent-until-now: log it so a "changes aren't reflected" report
+            // is diagnosable. `root.path` is the user's own selected path
+            // (public-facing by nature), so it's safe to log unredacted.
+            log.error("FSEventStreamCreate failed for \(root.path, privacy: .public); external-change watch disabled")
+            return
+        }
 
         let box = StreamBox(ref: stream)
         state.withLock { $0.stream = box }
