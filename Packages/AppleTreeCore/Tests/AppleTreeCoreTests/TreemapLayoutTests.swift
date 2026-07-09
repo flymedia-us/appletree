@@ -210,6 +210,60 @@ struct TreemapLayoutTests {
         }
     }
 
+    @Test("four children of distinct sizes each get a correctly proportioned, gapless rect across nested splits")
+    func fourChildrenNestedSplitProportions() {
+        // Regression coverage for a real crash fixed alongside this test:
+        // `layoutChildren` used to read a child's live `displaySize` twice,
+        // independently (once inside `splitPoint`'s own loop, again moments
+        // later summing `group1Size`) — state that keeps changing while a
+        // scan is still filling in a subtree or a delete/external-change
+        // fires, so the two reads could disagree and underflow a checked
+        // subtraction inside `splitPoint`, trapping the process. The fix
+        // snapshots every child's size once and has `splitPoint` return a
+        // 0-based offset into that snapshot, converted back to the
+        // `ArraySlice`'s own (non-zero, for a nested recursive call) index
+        // space via `children.index(startIndex, offsetBy:)`. Four
+        // distinctly-sized children force at least one level of recursion on
+        // both sides of the first split, which is exactly where an
+        // off-by-one in that offset conversion would first surface — as a
+        // gap, overlap, or wrong width, not a crash, so this test checks the
+        // geometry is exactly right, not just that nothing traps.
+        let a = FileNode(name: "a", isDirectory: false, logicalSize: 400, allocatedSize: 400)
+        let b = FileNode(name: "b", isDirectory: false, logicalSize: 300, allocatedSize: 300)
+        let c = FileNode(name: "c", isDirectory: false, logicalSize: 200, allocatedSize: 200)
+        let d = FileNode(name: "d", isDirectory: false, logicalSize: 100, allocatedSize: 100)
+        let root = makeDirectory(name: "root", children: [a, b, c, d])
+        let rect = CGRect(x: 0, y: 0, width: 1000, height: 100)
+        // No label reserved, to isolate split-proportion behavior from the
+        // label-inset behavior already covered elsewhere in this file.
+        let options = TreemapLayoutOptions(labelMinWidth: 10_000, labelMinHeight: 10_000)
+
+        let result = TreemapLayout.layout(node: root, in: rect, options: options)
+        let leaves = [a, b, c, d]
+        let rects = Dictionary(uniqueKeysWithValues: result.compactMap { node -> (String, CGRect)? in
+            leaves.contains(where: { $0 === node.source }) ? (node.source.name, node.rect) : nil
+        })
+
+        #expect(rects.count == 4)
+        for (node, expectedWidth) in zip(leaves, [400.0, 300.0, 200.0, 100.0]) {
+            let box = try! #require(rects[node.name])
+            #expect(abs(box.width - expectedWidth) < 0.001)
+            #expect(box.height == rect.height)
+        }
+
+        // Every child's rect must exactly tile the parent — sorted by
+        // leading edge, each one's trailing edge should meet the next one's
+        // leading edge, with no gap or overlap and no leftover space at
+        // either end. An off-by-one in the offset conversion would show up
+        // here as a missing/duplicated child or a seam between boxes.
+        let sorted = rects.values.sorted { $0.minX < $1.minX }
+        #expect(abs(sorted.first!.minX - rect.minX) < 0.001)
+        #expect(abs(sorted.last!.maxX - rect.maxX) < 0.001)
+        for index in 0..<(sorted.count - 1) {
+            #expect(abs(sorted[index].maxX - sorted[index + 1].minX) < 0.001)
+        }
+    }
+
     @Test("a node marked removed gets no box of its own and doesn't skew its siblings' proportions")
     func removedNodeIsExcludedFromLayout() {
         let doomed = FileNode(name: "doomed", isDirectory: false, logicalSize: 900, allocatedSize: 900)

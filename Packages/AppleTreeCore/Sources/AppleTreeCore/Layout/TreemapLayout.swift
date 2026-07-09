@@ -92,22 +92,37 @@ public enum TreemapLayout {
             return
         }
 
-        let splitIndex = splitPoint(for: children, totalSize: totalSize)
+        // Snapshot every child's `displaySize` exactly once, up front.
+        // `splitPoint` used to re-read `FileNode.displaySize` live in its own
+        // loop, and `group1Size` below read it live again, independently,
+        // moments later — two reads of state that keeps changing while a
+        // scan is still filling in this subtree, or while `markRemoved()`/
+        // `unmarkRemoved()` (external-change watch, in-app delete) fires.
+        // When those two live reads disagreed, `splitPoint`'s own bookkeeping
+        // invariant (`cumulative` never exceeds `half` before its own bounds
+        // check catches it) broke, underflowing its checked `UInt64`
+        // subtraction and trapping the process outright — confirmed as a
+        // real crash on a live scan, deeper in the recursion than the
+        // `totalSize - group1Size` underflow already guarded below.
+        // Snapshotting once removes the discrepancy at its root: every
+        // computation from here on works off the exact same numbers, so no
+        // amount of concurrent mutation elsewhere in the tree can desync
+        // `splitPoint`'s two hands against each other mid-loop.
+        let sizes = children.map(\.displaySize)
+        let splitOffset = splitPoint(sizes: sizes)
+        let splitIndex = children.index(children.startIndex, offsetBy: splitOffset)
         let group1 = children[children.startIndex..<splitIndex]
         let group2 = children[splitIndex...]
-        let group1Size = group1.reduce(UInt64(0)) { $0 + $1.displaySize }
+        let group1Size = sizes[..<splitOffset].reduce(UInt64(0), +)
         // `totalSize` was read once by the caller (ultimately from a
-        // parent's `displaySize`, at the top of the recursion); each
-        // child's own `displaySize` here is read fresh, moments later.
-        // `FileNode`'s aggregate fields aren't frozen for the layout's
-        // duration — `markRemoved()`/`unmarkRemoved()` (external-change
-        // watch, in-app delete) can recompute them concurrently — so
-        // `group1Size` can transiently exceed a `totalSize` that's gone
-        // stale in between. A plain `totalSize - group1Size` underflowed
-        // and trapped for real; saturating at 0 instead makes a
-        // stale-for-one-frame split harmless — it self-corrects on the
-        // next relayout, which the same change that caused the staleness
-        // already triggers.
+        // parent's `displaySize`, at the top of the recursion) — a moment
+        // before this call's own `sizes` snapshot above, so it can still be
+        // stale relative to `group1Size`'s fresh sum even though the two are
+        // now internally consistent with each other. A plain
+        // `totalSize - group1Size` underflowed and trapped for real;
+        // saturating at 0 instead makes a stale-for-one-frame split
+        // harmless — it self-corrects on the next relayout, which the same
+        // change that caused the staleness already triggers.
         let group2Size = totalSize > group1Size ? totalSize - group1Size : 0
         let ratio = min(1, CGFloat(Double(group1Size) / Double(totalSize)))
 
@@ -127,32 +142,36 @@ public enum TreemapLayout {
         layoutChildren(group2, totalSize: group2Size, in: rect2, depth: depth, options: options, into: &result)
     }
 
-    /// The index (within `children`) where cumulative size first reaches
-    /// half of `totalSize`, choosing whichever adjacent boundary lands
-    /// closer to the true half — this is what makes it an "ordered" treemap
-    /// rather than an arbitrary first/rest split. Always returns an index
-    /// strictly between `startIndex` and `endIndex` so both groups are
-    /// non-empty.
-    private static func splitPoint(for children: ArraySlice<FileNode>, totalSize: UInt64) -> Int {
-        let half = totalSize / 2
+    /// The 0-based offset into `sizes` where cumulative size first reaches
+    /// half of `sizes`'s own total, choosing whichever adjacent boundary
+    /// lands closer to the true half — this is what makes it an "ordered"
+    /// treemap rather than an arbitrary first/rest split. Deliberately halves
+    /// `sizes`'s own sum, not the caller's separately-passed `totalSize`
+    /// parameter (see `layoutChildren`'s doc comment on why those two can
+    /// legitimately differ): `cumulative` and `half` must come from the same
+    /// snapshot for this function's own bounds check to be trustworthy.
+    /// Always returns an offset strictly between `0` and `sizes.count` so
+    /// both groups are non-empty.
+    private static func splitPoint(sizes: [UInt64]) -> Int {
+        let half = sizes.reduce(UInt64(0), +) / 2
         var cumulative: UInt64 = 0
 
-        for index in children.indices {
-            let next = cumulative + children[index].displaySize
+        for index in sizes.indices {
+            let next = cumulative + sizes[index]
             if next >= half {
                 let distIncluding = next - half
                 let distExcluding = half - cumulative
-                let boundary = distIncluding < distExcluding ? children.index(after: index) : index
-                return clamp(boundary, in: children)
+                let boundary = distIncluding < distExcluding ? index + 1 : index
+                return clampSplitOffset(boundary, count: sizes.count)
             }
             cumulative = next
         }
-        return clamp(children.index(before: children.endIndex), in: children)
+        return clampSplitOffset(sizes.count - 1, count: sizes.count)
     }
 
-    private static func clamp(_ index: Int, in children: ArraySlice<FileNode>) -> Int {
-        if index <= children.startIndex { return children.index(after: children.startIndex) }
-        if index >= children.endIndex { return children.index(before: children.endIndex) }
-        return index
+    private static func clampSplitOffset(_ offset: Int, count: Int) -> Int {
+        if offset <= 0 { return 1 }
+        if offset >= count { return count - 1 }
+        return offset
     }
 }
