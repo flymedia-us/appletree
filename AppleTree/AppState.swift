@@ -246,7 +246,7 @@ final class AppState {
                 node.markRemoved()
             }
         }
-        bumpGeneration(force: true)
+        bumpGeneration()
     }
 
     private func handle(_ event: ScanEvent) {
