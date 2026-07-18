@@ -66,15 +66,29 @@ enum ExtensionColor {
         return aliases[ext] ?? ext
     }
 
+    /// Memoizes `gradient`/`solidColor` by their alias-normalized key.
+    /// `gradient(forFileName:)` runs once per visible box on every treemap
+    /// `Canvas` redraw (including every hover-tick over a tree that can have
+    /// hundreds of thousands of boxes), so recomputing `Color(hue:...)` from
+    /// scratch each time was measurable. Bounded by the number of distinct
+    /// extensions actually seen, not unbounded. `nonisolated(unsafe)`: every
+    /// caller (treemap draw, extension summary cell configure) runs on the
+    /// main thread, so this is never accessed concurrently.
+    nonisolated(unsafe) private static var gradientCache: [String: (top: Color, bottom: Color)] = [:]
+    nonisolated(unsafe) private static var solidColorCache: [String: Color] = [:]
+
     /// A top/bottom color pair for a subtle vertical gradient fill — the
     /// same hue at slightly different brightness, rather than a flat color.
     static func gradient(forFileName name: String) -> (top: Color, bottom: Color) {
         let key = key(forFileName: name)
+        if let cached = gradientCache[key] { return cached }
         let hue = curatedHue[key] ?? hashHue(key)
         let saturation = 0.55
         let top = Color(hue: hue, saturation: saturation * 0.85, brightness: 0.88)
         let bottom = Color(hue: hue, saturation: min(1, saturation * 1.15), brightness: 0.60)
-        return (top, bottom)
+        let result = (top, bottom)
+        gradientCache[key] = result
+        return result
     }
 
     /// A single flat swatch color for the given extension — the same hue
@@ -83,8 +97,11 @@ enum ExtensionColor {
     /// the treemap below it.
     static func solidColor(forExtension ext: String?) -> Color {
         let key = key(forExtension: ext)
+        if let cached = solidColorCache[key] { return cached }
         let hue = curatedHue[key] ?? hashHue(key)
-        return Color(hue: hue, saturation: 0.6, brightness: 0.78)
+        let result = Color(hue: hue, saturation: 0.6, brightness: 0.78)
+        solidColorCache[key] = result
+        return result
     }
 
     /// Fallback swatch for every file type outside the top-N by size in the

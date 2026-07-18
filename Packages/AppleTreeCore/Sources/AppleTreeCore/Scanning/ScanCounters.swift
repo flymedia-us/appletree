@@ -28,6 +28,7 @@ final class ScanCounters: @unchecked Sendable {
         var tccDeniedFolders = 0
         var lastProgressEmit: ContinuousClock.Instant = .now
         var lastSubtreeCompletedEmit: ContinuousClock.Instant = .now
+        var lastFolderSkippedEmit: ContinuousClock.Instant = .now
     }
 
     private let lock = OSAllocatedUnfairLock(initialState: State())
@@ -68,10 +69,31 @@ final class ScanCounters: @unchecked Sendable {
         lock.withLock { state in state.foldersScanned += 1 }
     }
 
-    func addFolderSkipped(reason: FolderSkipReason) {
+    /// Records one skipped folder. Returns `true` if this one should also be
+    /// emitted as a `.folderSkipped` stream event (throttled the same way
+    /// `.subtreeCompleted` is below) — the running totals this feeds
+    /// (`foldersSkipped`/`tccDeniedFolders`, read via `snapshot()` /
+    /// `.finished`) are always exact regardless, since only the *event*
+    /// emission is rate-limited, not the count. A heavy permission-denied
+    /// fan-out (routine on a whole-drive or home-directory scan — see
+    /// `ScanEvent`'s own doc comments) could otherwise yield tens of
+    /// thousands of stream events with no benefit: `AppState` only ever
+    /// keeps the first 200 as a UI sample anyway.
+    func addFolderSkipped(reason: FolderSkipReason) -> Bool {
         lock.withLock { state in
             state.foldersSkipped += 1
             if reason == .tccDenied { state.tccDeniedFolders += 1 }
+
+            // Always emit the very first skip regardless of timing — a scan
+            // with only a handful of skips spread further apart than the
+            // throttle window must still surface at least one sample
+            // promptly, not risk losing its only occurrence to an unlucky
+            // window relative to `ScanCounters`' own construction time.
+            let now = ContinuousClock.now
+            let isFirst = state.foldersSkipped == 1
+            guard isFirst || now - state.lastFolderSkippedEmit > .milliseconds(50) else { return false }
+            state.lastFolderSkippedEmit = now
+            return true
         }
     }
 

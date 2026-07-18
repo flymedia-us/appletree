@@ -57,7 +57,18 @@ public final class ExternalChangeWatcher: @unchecked Sendable {
     /// tree this watcher's paths resolve against.
     public static func watch(root: URL) -> (AsyncStream<[PathChange]>, ExternalChangeWatcher) {
         var continuation: AsyncStream<[PathChange]>.Continuation!
-        let stream = AsyncStream<[PathChange]> { continuation = $0 }
+        // Bounded rather than the default `.unbounded`: this watcher runs
+        // continuously for as long as the app has a scanned tree open, so an
+        // consumer that ever stalls (a long synchronous UI recompute, a
+        // debugger pause) while the watched root keeps seeing ordinary
+        // filesystem churn would otherwise queue every FSEvents batch
+        // forever, growing memory without bound. `.bufferingNewest` keeps
+        // the consumer on the freshest available state once it catches up
+        // rather than replaying a long-stale backlog — each `PathChange`
+        // already carries a `stillExists` snapshot taken at callback time
+        // (see this type's own doc comment), so a newer batch for the same
+        // path is strictly more current than an older, dropped one.
+        let stream = AsyncStream<[PathChange]>(bufferingPolicy: .bufferingNewest(256)) { continuation = $0 }
         let watcher = ExternalChangeWatcher(root: root, continuation: continuation)
         return (stream, watcher)
     }

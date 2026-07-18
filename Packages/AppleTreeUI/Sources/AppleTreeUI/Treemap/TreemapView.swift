@@ -37,6 +37,17 @@ public struct TreemapView: View {
     /// has no cooperative cancellation checks, effectively uncancellable)
     /// duplicate walk per trigger.
     @State private var relayoutAgainAfter = false
+    /// The root to use for the guaranteed follow-up pass `relayoutAgainAfter`
+    /// promises. Captured explicitly (into `@State`, so it's shared/live
+    /// across `TreemapView` struct instances) at the moment a relayout is
+    /// deferred, rather than read as `self.rootNode` from inside the pending
+    /// `Task` — that closure's `self` is whatever struct instance created it,
+    /// and `rootNode` is a plain `let`, not `@State`, so it can go stale if a
+    /// new scan replaces the root while the deferred pass is still in
+    /// flight. Same hazard `runRelayout`'s own doc comment calls out for
+    /// `treeVersion` vs. `layoutedVersion` — missed here for `rootNode`
+    /// until this was caught in review.
+    @State private var pendingRelayoutRoot: FileNode?
     /// True for the duration of a window-edge drag (`NSWindow`'s own live-
     /// resize, reported by `LiveResizeMonitor` below — SwiftUI's
     /// `GeometryReader` alone can't distinguish "still dragging" from "size
@@ -212,6 +223,7 @@ public struct TreemapView: View {
         // threads for the same CPU cores.
         guard relayoutTask == nil else {
             relayoutAgainAfter = true
+            pendingRelayoutRoot = rootNode
             return
         }
         runRelayout(rootNode: rootNode, size: size)
@@ -288,8 +300,9 @@ public struct TreemapView: View {
                 }
             }
             self.relayoutTask = nil
-            if self.relayoutAgainAfter, let latestRoot = self.rootNode {
+            if self.relayoutAgainAfter, let latestRoot = self.pendingRelayoutRoot {
                 self.relayoutAgainAfter = false
+                self.pendingRelayoutRoot = nil
                 self.runRelayout(rootNode: latestRoot, size: self.layoutSize)
             }
         }

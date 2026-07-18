@@ -8,6 +8,16 @@ import UniformTypeIdentifiers
 final class FolderCellView: NSTableCellView {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("FolderCell")
 
+    /// Cache of `NSWorkspace.shared.icon(for:)` results keyed by file
+    /// extension (folders use `folderIconCacheKey`, a sentinel that can't
+    /// collide with a real `pathExtension`). `configure(node:isDeleted:)`
+    /// runs on every row reuse — including every `reloadItem` during an
+    /// active scan — so re-resolving the same handful of extensions' system
+    /// icons over and over was wasted work. `nonisolated(unsafe)`: only ever
+    /// touched from the main thread (`NSOutlineView` cell configuration).
+    nonisolated(unsafe) private static var iconCache: [String: NSImage] = [:]
+    private static let folderIconCacheKey = "/"
+
     private let nameField = NSTextField(labelWithString: "")
 
     override init(frame frameRect: NSRect) {
@@ -48,12 +58,23 @@ final class FolderCellView: NSTableCellView {
             nameField.textColor = .labelColor
         }
         if node.isDirectory {
-            imageView?.image = NSWorkspace.shared.icon(for: .folder)
+            imageView?.image = Self.icon(forKey: Self.folderIconCacheKey) {
+                NSWorkspace.shared.icon(for: .folder)
+            }
         } else {
             let ext = (node.name as NSString).pathExtension
-            let type = ext.isEmpty ? UTType.data : (UTType(filenameExtension: ext) ?? .data)
-            imageView?.image = NSWorkspace.shared.icon(for: type)
+            imageView?.image = Self.icon(forKey: ext) {
+                let type = ext.isEmpty ? UTType.data : (UTType(filenameExtension: ext) ?? .data)
+                return NSWorkspace.shared.icon(for: type)
+            }
         }
+    }
+
+    private static func icon(forKey key: String, resolve: () -> NSImage) -> NSImage {
+        if let cached = iconCache[key] { return cached }
+        let icon = resolve()
+        iconCache[key] = icon
+        return icon
     }
 
     static func makeOrReuse(in outlineView: NSOutlineView, node: FileNode, isDeleted: Bool) -> FolderCellView {
