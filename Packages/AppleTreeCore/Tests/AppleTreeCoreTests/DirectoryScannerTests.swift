@@ -350,4 +350,23 @@ struct DirectoryScannerTests {
 
         #expect(didFinish, "scan did not stop within the timeout after cancellation")
     }
+
+    @Test("a naturally completed scan emits .finished, not .cancelled")
+    func completedScanEmitsFinished() async throws {
+        let root = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let scanner = DirectoryScanner()
+        var sawFinished = false
+        var sawCancelled = false
+        for try await event in await scanner.scan(root: root) {
+            switch event {
+            case .finished: sawFinished = true
+            case .cancelled: sawCancelled = true
+            default: break
+            }
+        }
+        #expect(sawFinished)
+        #expect(!sawCancelled)
+    }
 }

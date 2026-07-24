@@ -5,13 +5,13 @@ import CoreGraphics
 /// against synthetic trees.
 ///
 /// Algorithm: a recursive binary-split "ordered/cushion treemap" — the same
-/// family GrandPerspective's `TreeLayoutBuilder` uses (read for algorithm
-/// shape, not copied) and visually equivalent to WizTree's clean rectangular
-/// blocks (as opposed to the classic Bruls/Huizing/van Wijk "squarified"
-/// algorithm's thinner slivers). Children are split into two groups at
-/// whichever point makes each group's cumulative size closest to half the
-/// total, then each group recurses into its own sub-rect — repeating until
-/// every group is a single node.
+/// family used by classic Mac disk-map utilities (read for algorithm shape,
+/// implemented independently here) and visually equivalent to WizTree's clean
+/// rectangular blocks (as opposed to the classic Bruls/Huizing/van Wijk
+/// "squarified" algorithm's thinner slivers). Children are split into two
+/// groups at whichever point makes each group's cumulative size closest to
+/// half the total, then each group recurses into its own sub-rect — repeating
+/// until every group is a single node.
 ///
 /// Label rendering: whenever a box clears the label-size threshold, a thin
 /// strip is reserved at its top for a name+size label, and its children (if

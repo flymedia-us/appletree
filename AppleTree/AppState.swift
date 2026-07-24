@@ -4,7 +4,7 @@ import AppleTreeUI
 import Foundation
 import os
 
-private let log = Logger(subsystem: "com.samfriedman.AppleTree", category: "AppState")
+private let log = Logger(subsystem: "com.FlyMedia.AppleTree", category: "AppState")
 
 struct SkippedFolder: Identifiable {
     let id = UUID()
@@ -23,6 +23,9 @@ final class AppState {
     private(set) var foldersSkipped = 0
     private(set) var tccDeniedFolders = 0
     private(set) var lastScanDuration: Duration?
+    /// True when the most recent scan ended because the user cancelled it
+    /// (partial tree may still be on screen). Cleared on the next scan start.
+    private(set) var scanWasCancelled = false
     private(set) var currentPath: String?
     private(set) var errorMessage: String?
     private(set) var isPermissionNudgeDismissed = false
@@ -74,9 +77,9 @@ final class AppState {
     /// `markVisualizationRendered`.
     private var loadingGeneration = 0
 
-    static let fdaNudgeDontAskAgainKey = "com.samfriedman.AppleTree.fdaNudgeDismissed"
-    static let confirmBeforeDeleteKey = "com.samfriedman.AppleTree.confirmBeforeDelete"
-    static let appearancePreferenceKey = "com.samfriedman.AppleTree.appearancePreference"
+    static let fdaNudgeDontAskAgainKey = "com.FlyMedia.AppleTree.fdaNudgeDismissed"
+    static let confirmBeforeDeleteKey = "com.FlyMedia.AppleTree.confirmBeforeDelete"
+    static let appearancePreferenceKey = "com.FlyMedia.AppleTree.appearancePreference"
 
     /// Whether Delete / ⌘⌫ should ask before calling `FileManager.trashItem`.
     /// Defaults to `true` when the preference has never been set — safer for
@@ -141,7 +144,31 @@ final class AppState {
         startScan(root: url)
     }
 
-    func startScan(root: URL) {
+    /// Starts a scan from a drag-and-drop. Finder drops usually carry a
+    /// security-scoped URL; when they don't (sandbox can't retain access),
+    /// fall back to an Open Panel pre-pointed at the dropped folder so the
+    /// user can grant durable access before scanning/deleting/watching.
+    func startScanFromDroppedFolder(_ dropped: URL) {
+        if dropped.startAccessingSecurityScopedResource() {
+            // Hand the already-acquired scope to `startScan` so we don't
+            // double-`startAccessing` (each start needs a matching stop).
+            startScan(root: dropped, preAcquiredSecurityScope: true)
+            return
+        }
+
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = dropped
+        panel.prompt = "Scan"
+        panel.message = "Grant access to “\(dropped.lastPathComponent)” to scan it"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        startScan(root: url)
+    }
+
+    func startScan(root: URL, preAcquiredSecurityScope: Bool = false) {
         scanTask?.cancel()
         stopWatchingForExternalChanges()
         releaseSecurityScopedAccess()
@@ -156,6 +183,7 @@ final class AppState {
         foldersSkipped = 0
         tccDeniedFolders = 0
         lastScanDuration = nil
+        scanWasCancelled = false
         currentPath = nil
         errorMessage = nil
         isPermissionNudgeDismissed = false
@@ -169,8 +197,12 @@ final class AppState {
         // directory for the duration of `startAccessingSecurityScopedResource`
         // — without this, deep scans, FSEvents watches, and Trash deletes
         // under that root can fail intermittently once the panel returns.
-        if root.startAccessingSecurityScopedResource() {
+        if preAcquiredSecurityScope {
             securityScopedRootURL = root
+        } else if root.startAccessingSecurityScopedResource() {
+            securityScopedRootURL = root
+        } else {
+            log.info("No security-scoped access for \(root.path, privacy: .public); scan may be limited to entitlement-covered paths")
         }
 
         scanRootURL = root
@@ -179,8 +211,13 @@ final class AppState {
             guard let self else { return }
             do {
                 for try await event in await scanner.scan(root: root) {
+                    try Task.checkCancellation()
                     self.handle(event)
                 }
+            } catch is CancellationError {
+                // Consumer cancelled before/without a `.cancelled` event —
+                // still settle UI into the cancelled state.
+                self.handleConsumerCancellation()
             } catch {
                 self.handle(.failed(error))
             }
@@ -199,9 +236,17 @@ final class AppState {
         errorMessage = "Couldn't move to Trash: \(error.localizedDescription)"
     }
 
+    func clearErrorMessage() {
+        errorMessage = nil
+    }
+
     func cancelScan() {
+        guard isScanning else { return }
+        scanWasCancelled = true
         scanTask?.cancel()
-        isScanning = false
+        // `isScanning` flips false when `.cancelled` arrives (or via
+        // `handleConsumerCancellation`) so the toolbar doesn't briefly claim
+        // "completed" between cancel and the stream settling.
     }
 
     /// Starts (or restarts) a live watch for changes made to the just-scanned
@@ -286,6 +331,7 @@ final class AppState {
 
         case .finished(let duration, let files, let skipped, let tccDenied):
             isScanning = false
+            scanWasCancelled = false
             isLoadingTree = true
             awaitedVisualizationComponents = [.treemap, .extensionSummary]
             filesScanned = files
@@ -300,10 +346,54 @@ final class AppState {
             // rendering this generation — see `treemapDidFinishRendering`/
             // `extensionSummaryDidFinishRendering`.
 
+        case .cancelled(let duration, let files, let skipped, let tccDenied):
+            settleCancelledScan(
+                duration: duration,
+                filesScanned: files,
+                foldersSkipped: skipped,
+                tccDeniedFolders: tccDenied
+            )
+
         case .failed(let error):
             isScanning = false
             log.error("Scan failed: \(error.localizedDescription, privacy: .public)")
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// When the consumer Task is cancelled without receiving `.cancelled`
+    /// (race with stream teardown), mirror the cancelled settlement so the
+    /// toolbar doesn't stick on "Scanning…".
+    private func handleConsumerCancellation() {
+        guard isScanning || scanWasCancelled else { return }
+        settleCancelledScan(
+            duration: lastScanDuration,
+            filesScanned: filesScanned,
+            foldersSkipped: foldersSkipped,
+            tccDeniedFolders: tccDeniedFolders
+        )
+    }
+
+    private func settleCancelledScan(
+        duration: Duration?,
+        filesScanned: Int,
+        foldersSkipped: Int,
+        tccDeniedFolders: Int
+    ) {
+        isScanning = false
+        scanWasCancelled = true
+        isLoadingTree = false
+        awaitedVisualizationComponents = []
+        self.filesScanned = filesScanned
+        self.foldersSkipped = foldersSkipped
+        self.tccDeniedFolders = tccDeniedFolders
+        lastScanDuration = duration
+        currentPath = nil
+        bumpGeneration(force: true)
+        // Keep the partial tree useful: watch for further external changes
+        // under whatever was scanned before cancel.
+        if rootNode != nil {
+            startWatchingForExternalChanges()
         }
     }
 

@@ -8,7 +8,14 @@ Apple Tree scans a folder or whole volume with a parallel, native `fts(3)`-based
 
 ## Status
 
-Pre-release. Scanning, all three views, deletion, and Quick Look integration work end-to-end against real volumes. Not yet on the App Store — see [Known limitations](#known-limitations) below.
+**1.0.0** — core product is ready for Mac App Store submission and public source release on GitHub.
+
+**Distribution** (same app either way, GrandPerspective-style):
+
+- **Free** — build from this repository (or download a release binary when published)
+- **Mac App Store** — small paid download for convenience, automatic updates, and to support development
+
+Source is licensed under the **GNU General Public License v3**. See [Known limitations](#known-limitations) and [`docs/app-store-checklist.md`](docs/app-store-checklist.md) for owner steps (signing, icon, hosted privacy URL, App Store Connect).
 
 ## Features
 
@@ -26,11 +33,11 @@ Pre-release. Scanning, all three views, deletion, and Quick Look integration wor
 
 ## Known limitations
 
-- **DUNS/Apple Developer Program enrollment is pending** — the app isn't notarized or code-signed for distribution yet, and there's no App Store listing.
-- **Placeholder app icon.** [`AppIcon.appiconset`](AppleTree/Assets.xcassets/AppIcon.appiconset) has a temporary icon, not a final one.
-- **No promotional site or privacy policy yet** — planned as a separate, lightweight website, out of scope for this repository.
-- **No auto-updater** — limited releases will need a manual download until Sparkle (or App Store) distribution is wired up.
+- **App Store listing not yet live** — archive, upload, and review are owner steps; see [`docs/app-store-checklist.md`](docs/app-store-checklist.md).
+- **Placeholder app icon.** [`AppIcon.appiconset`](AppleTree/Assets.xcassets/AppIcon.appiconset) still needs final brand art before submission.
+- **Privacy policy must be hosted** — draft at [`docs/privacy-policy.md`](docs/privacy-policy.md); App Store Connect needs a public HTTPS URL.
 - **English-only UI** — no localization yet.
+- **No direct-download updater** — free builds are manual until you publish release artifacts; Mac App Store builds update through the store.
 
 ## Project structure
 
@@ -38,9 +45,8 @@ Pre-release. Scanning, all three views, deletion, and Quick Look integration wor
 AppleTree/                    App target (SwiftUI shell, AppState, entitlements, PrivacyInfo.xcprivacy)
 Packages/AppleTreeCore/       Scanning engine, FileNode model, categorization, treemap layout — no UI/framework dependencies
 Packages/AppleTreeUI/         AppKit-backed views (Tree View, Treemap, Extension Summary) as SwiftUI NSViewRepresentables
-GrandPerspective-3_7_2/       Vendored GPL-licensed reference source, for reading (treemap layout shape, legacy scan patterns) — not compiled into the app; see its own COPYING.txt
 WizTree_REFERENCE/            A reference screenshot of WizTree's UI
-docs/wiztree-research.md      Research notes on WizTree's/GrandPerspective's UI and scanning approach that informed this design
+docs/                         Privacy policy draft, App Store checklist, research notes
 ```
 
 `AppleTreeCore` is deliberately framework-free (no AppKit/SwiftUI) so the scanning engine and layout algorithm stay unit-testable and reusable; `AppleTreeUI` is where all the AppKit/SwiftUI integration lives.
@@ -66,8 +72,16 @@ cd Packages/AppleTreeUI && swift test
 
 or run them from Xcode with the `AppleTreeCore`/`AppleTreeUI` schemes (⌘U).
 
+CI runs the same package tests on push/PR via [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
 `Packages/AppleTreeCore/Sources/ScanBench` is a small CLI benchmarking harness (`swift run scanbench [path]`) for manually timing/verifying the scanner against real folders — not part of the shipping app, not covered by tests.
 
 ## License
 
-No license has been chosen yet for Apple Tree's own source (all rights reserved by default). The vendored [`GrandPerspective-3_7_2`](GrandPerspective-3_7_2) sources remain under the GNU GPL v2 — see [its own `COPYING.txt`](GrandPerspective-3_7_2/COPYING.txt) — and are kept purely as a design reference; no code from it is compiled into or shipped with Apple Tree.
+Copyright © 2026 Fly Media LLC.
+
+Apple Tree is free software: you can redistribute it and/or modify it under the terms of the [GNU General Public License](LICENSE) as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with this program (see [`LICENSE`](LICENSE)). If not, see <https://www.gnu.org/licenses/>.

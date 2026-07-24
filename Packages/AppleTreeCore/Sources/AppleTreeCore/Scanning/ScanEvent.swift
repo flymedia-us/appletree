@@ -80,5 +80,8 @@ public enum ScanEvent: Sendable {
     case folderSkipped(path: String, reason: FolderSkipReason)
 
     case finished(duration: Duration, filesScanned: Int, foldersSkipped: Int, tccDeniedFolders: Int)
+    /// Emitted instead of `.finished` when the consuming task cancelled the
+    /// scan mid-walk. Counters reflect whatever was observed before cancel.
+    case cancelled(duration: Duration, filesScanned: Int, foldersSkipped: Int, tccDeniedFolders: Int)
     case failed(any Error)
 }

@@ -2,8 +2,9 @@
 
 Research notes to inform AppleTree's design. Based on the reference screenshot
 (`WizTree_REFERENCE/Tree_View.png`), WizTree's own docs/guide, third-party
-write-ups, and analysis of the GrandPerspective source already vendored in
-this repo.
+write-ups, and (historically) study of GrandPerspective's public source for
+algorithm/UI ideas — that tree is **no longer vendored** in this repository;
+Apple Tree's own code is original and licensed under GPLv3.
 
 ## 1. UI Layout (from the reference screenshot)
 
@@ -95,9 +96,8 @@ performance study and the `dumac`/macdirstat projects):
 | `fts(3)` (`fts_open`/`fts_children`/`fts_read`) | A recursive-traversal wrapper around `readdir`+`lstat`. Benchmarks found **FTS consistently fastest on local HFS+/APFS volumes** even vs `getattrlistbulk`, though `getattrlistbulk` pulls ahead on network volumes (AFP/SMB). |
 | `NSFileManager` (`contentsOfDirectoryAtURL:` / `enumeratorAtURL:`) | Roughly matches `getattrlistbulk` performance (it's implemented on top of it) but with Foundation object overhead; convenient but not the fastest path for a hot loop. |
 
-**Key existing-code finding**: `GrandPerspective`'s scanner
-([`TreeBuilder.m`](../GrandPerspective-3_7_2/src/tree/TreeBuilder.m)) already
-uses `fts_open`/`fts_children` — i.e. it already picked the API that
+**Key prior-art finding**: GrandPerspective's scanner historically used
+`fts_open`/`fts_children` — i.e. it already picked the API that
 benchmarks show is fastest for local traversal. However **the scan is
 single-threaded**: one FTS walk, no concurrent subdirectory traversal (a
 `dispatch_queue` is used only to balance the in-memory tree after the fact,
@@ -114,8 +114,8 @@ which is exactly what `macdirstat` does with Rust's `rayon`, and what the
 `dumac` prototype benchmarked (≈6.4x faster than serial `du` on ~400K files).
 A `getattrlistbulk`-based bulk fetch may still be worth it *within* each
 worker to cut syscall count further, but FTS-per-thread is a defensible
-starting point that's a drop-in evolution of the vendored GrandPerspective
-scanner rather than a rewrite.
+starting point that's an evolution of the classic single-threaded FTS
+approach rather than a rewrite.
 
 Two macOS-specific gotchas to design around:
 - **Full Disk Access**: modern macOS sandboxes protected folders (Mail,
@@ -133,8 +133,7 @@ Two macOS-specific gotchas to design around:
 There are at least **three** independent "WinDirStat/WizTree for Mac" projects
 on GitHub beyond GrandPerspective. Their licenses vary a lot, which matters
 because it determines whether we can literally build on their code
-(as this repo already does by vendoring GrandPerspective) vs. use them only
-as a design/behavior reference:
+vs. use them only as a design/behavior reference:
 
 | Project | Lang / Stack | License | Stars | Last push | Visualization | Notes |
 |---|---|---|---|---|---|---|
@@ -180,35 +179,28 @@ were the right approach:
   — useful precedent for how this project's own tooling might approach it.
 
 **License comparison that matters for the "lightweight, modern, native"
-goal**: GrandPerspective is GPL-2-or-later Objective-C/Cocoa (legacy AppKit
-patterns, copyleft). `phalladar/MacDirStat` is MIT Swift 6/SwiftUI with
-zero dependencies — both a better license (permissive, no copyleft
-obligations) and a much closer starting stack to what we actually want to
-ship. If we lean on it the way GrandPerspective is currently vendored, MIT
-means we can freely copy/modify/relicense; GPL/AGPL sources (GrandPerspective,
-both `macdirstat` variants) can only inform *design*, not be copied from
-directly, without pulling the whole project under GPL/AGPL.
+goal** (as of the research date): GrandPerspective is GPL-2-or-later
+Objective-C/Cocoa (legacy AppKit patterns, copyleft). `phalladar/MacDirStat`
+is MIT Swift 6/SwiftUI with zero dependencies — closer stack to a green-field
+Swift rewrite. Apple Tree ultimately chose an original implementation under
+**GPLv3** (GrandPerspective-style distribution), using these projects only
+as design/behavior references — no third-party app source is vendored.
 
 ## 6. Foundation options: what's reusable from each candidate
 
-### GrandPerspective (currently vendored, GPL-2+, Objective-C/Cocoa)
+### GrandPerspective (historical reference — no longer vendored)
 
-- [`TreeLayoutBuilder.m`](../GrandPerspective-3_7_2/src/tree/TreeLayoutBuilder.m):
-  a recursive binary-split layout (largest child carved off first, alternating
-  split axis by aspect ratio) — the "ordered/cushion treemap" family, the
-  same lineage as WinDirStat/SequoiaView, visually equivalent to WizTree's
-  clean rectangular blocks. Sound algorithm, but it's 20-year-old
-  Objective-C/Cocoa `NSView` drawing code — re-hosting it into SwiftUI/Metal
-  is a port, not a drop-in, and it drags GPL-2+ copyleft along with it.
-- [`TreeDrawer.m`](../GrandPerspective-3_7_2/src/view/TreeDrawer.m): flat/
-  gradient rectangle fills only — **zero text drawing anywhere** (confirmed
-  by inspection). No text-label feature to lean on here at all.
+- Layout: a recursive binary-split "ordered/cushion treemap" (largest child
+  carved off first, alternating split axis by aspect ratio) — same lineage as
+  WinDirStat/SequoiaView, visually equivalent to WizTree's clean rectangular
+  blocks. Sound algorithm; Apple Tree reimplemented this family in Swift
+  independently.
+- Drawing historically: flat/gradient rectangle fills — little or no
+  on-box text (labels were a gap vs WizTree).
 - **No Tree View equivalent** — GrandPerspective is treemap-only,
-  single-pane. Would be fully new UI work.
-- Net assessment: sound layout *theory*, but the actual code is the
-  least aligned of the candidates with the "lightweight, modern,
-  made-for-Mac" goal — old language, old UI framework, most restrictive
-  common license of the group besides AGPL.
+  single-pane.
+- Net assessment: sound layout *theory*; code itself was not a fit to vendor
+  into a modern SwiftUI app.
 
 ### `phalladar/MacDirStat` (MIT, Swift 6/SwiftUI) — closest match to our target stack
 
@@ -216,12 +208,11 @@ As detailed in section 5: parallel-`fts` scanner with hardlink/clone dedup
 already written, Squarify treemap already rendered on `Canvas` with on-box
 text labels already implemented (name + size, size-gated), and a working
 (if basic) `OutlineGroup`-based tree sidebar already synced to treemap
-selection. Its MIT license means we can copy and modify it directly, the
-way GrandPerspective is currently vendored, without copyleft
-consequences. The main gap vs. our goal is the Tree View's column depth
-(no % of Parent, Allocated, Files/Folders columns/sort yet) — which is
-exactly the feature this project wants to lead with, so it's additive work
-on a modern base rather than a green-field build.
+selection. Its MIT license would allow copying; Apple Tree did **not**
+import that code — techniques informed the design only. The main gap vs.
+our goal is the Tree View's column depth (no % of Parent, Allocated,
+Files/Folders columns/sort yet) — which is exactly the feature this project
+wanted to lead with.
 
 ### `Ti-03/MacDirStat` and `AlexGladkov/Spacie` — reference only
 
@@ -232,28 +223,21 @@ candidate — would obligate open-sourcing the whole app, including over a
 network), and `Spacie` has no asserted license (default copyright — no
 legal right to copy).
 
-## 7. Decision: `phalladar/MacDirStat` is reference-only, not vendored
+## 7. Decision: write from scratch; no vendored third-party app trees
 
 Given the "lightweight, modern, made-for-Mac" direction, `phalladar/MacDirStat`
-is a materially better starting point than GrandPerspective on every axis
-that matters here (language, UI framework, dependency count, license
-permissiveness, *and* it already has parallel scanning + labeled treemap
-boxes — the two hardest items on our roadmap). Three ways to use it were
-weighed — vendor it in fully (like `GrandPerspective-3_7_2/` is handled
-today), vendor just its `Scanning/` module, or treat it as a design
-reference only and write fresh Swift throughout.
+was a strong design reference (language, UI framework, parallel scanning +
+labeled treemap). Options weighed at the time included vendoring it or
+treating it as reference-only.
 
 **Decision (2026-07-03): reference only.** AppleTree's scanner, treemap, and
-Tree View will be written from scratch, informed by `phalladar/MacDirStat`'s
+Tree View are written from scratch, informed by `phalladar/MacDirStat`'s
 documented techniques (TaskGroup-per-subdirectory traversal, inode-based
 hardlink/clone dedup, `Canvas`-based size-gated label rendering) and by
-GrandPerspective's treemap layout math, but without importing code from
-either. This keeps AppleTree's license posture clean (no inherited
-obligations from any reference project) and lets the implementation match
-WizTree's specific column/label layout exactly rather than adapting someone
-else's UI. `GrandPerspective-3_7_2/` remains vendored in the repo per the
-existing README (its code may still be *read* for the layout algorithm,
-per GPL's allowance of studying/reimplementing ideas — just not copied).
+GrandPerspective's published treemap layout *ideas*, without importing code
+from either. **Update (2026-07-24):** the former `GrandPerspective-3_7_2/`
+reference tree was removed from the repository; Apple Tree is licensed under
+GPLv3.
 
 ## 8. Recommendations mapped to project goals
 

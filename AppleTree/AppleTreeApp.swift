@@ -24,7 +24,10 @@ struct AppleTreeApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        // Single primary window — avoids multi-window copies of one scan
+        // state fighting each other. File → Open Folder… still works via
+        // the replaced New Item command group below.
+        Window("Apple Tree", id: "main") {
             ContentView(appState: appState, colorScheme: resolvedScheme)
                 .preferredColorScheme(resolvedScheme)
                 .background(WindowAppearanceApplicator(appearance: resolvedNSAppearance))
@@ -36,6 +39,11 @@ struct AppleTreeApp: App {
         .defaultSize(width: 1200, height: 800)
         .windowResizability(.contentMinSize)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Apple Tree") {
+                    Self.showAboutPanel()
+                }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("Open Folder…") {
                     appState.presentFolderPickerAndScan()
@@ -51,6 +59,30 @@ struct AppleTreeApp: App {
                 .background(WindowAppearanceApplicator(appearance: resolvedNSAppearance))
                 .onAppear { systemAppearance.startIfNeeded() }
         }
+    }
+
+    private static func showAboutPanel() {
+        let credits = NSAttributedString(
+            string: """
+            A high-speed disk space analyzer for macOS.
+
+            © 2026 Fly Media LLC
+            Free software under the GNU General Public License v3.
+            """,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: {
+                    let style = NSMutableParagraphStyle()
+                    style.alignment = .center
+                    return style
+                }(),
+            ]
+        )
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .credits: credits,
+            .applicationName: "Apple Tree",
+        ])
     }
 }
 

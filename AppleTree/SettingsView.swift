@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Minimal preferences for a limited public release — appearance, destructive-
-/// action safety, and a way to undo the permanent Full Disk Access nudge.
+/// Preferences for the 1.0 release — appearance, destructive-action safety,
+/// and a way to undo the permanent Full Disk Access nudge.
 struct SettingsView: View {
     @AppStorage(AppState.appearancePreferenceKey) private var appearanceRawValue = AppearancePreference.system.rawValue
     @AppStorage(AppState.confirmBeforeDeleteKey) private var confirmBeforeDelete = true

@@ -160,6 +160,13 @@ func runOneScan(root: URL, options: ScanOptions, verbose: Bool) async -> ScanRes
                 totalSkipped = foldersSkipped
                 totalTccDenied = tccDeniedFolders
                 duration = d
+            case .cancelled(let d, let filesScanned, let foldersSkipped, let tccDeniedFolders):
+                // ScanBench shouldn't cancel, but treat it like a finished
+                // partial result so the exhaustive switch stays honest.
+                totalFiles = filesScanned
+                totalSkipped = foldersSkipped
+                totalTccDenied = tccDeniedFolders
+                duration = d
             case .subtreeCompleted:
                 break
             case .failed(let error):

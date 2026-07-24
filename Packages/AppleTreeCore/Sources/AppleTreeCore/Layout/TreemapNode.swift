@@ -29,8 +29,7 @@ public struct TreemapNode: Sendable {
 
 public struct TreemapLayoutOptions: Sendable {
     /// Boxes below this in either dimension are dropped entirely (not laid
-    /// out, not drawn) — matches GrandPerspective's "must enclose a pixel
-    /// center" early-out, generalized.
+    /// out, not drawn) — an early-out so sub-pixel boxes never get geometry.
     public var minBoxSize: CGFloat
     public var labelMinWidth: CGFloat
     public var labelMinHeight: CGFloat

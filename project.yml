@@ -1,6 +1,6 @@
 name: AppleTree
 options:
-  bundleIdPrefix: com.samfriedman
+  bundleIdPrefix: com.FlyMedia
   deploymentTarget:
     macOS: "15.0"
   createIntermediateGroups: true
@@ -23,8 +23,8 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.samfriedman.AppleTree
-        MARKETING_VERSION: "0.1.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.FlyMedia.AppleTree
+        MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
         MACOSX_DEPLOYMENT_TARGET: "15.0"

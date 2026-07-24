@@ -104,12 +104,24 @@ public actor DirectoryScanner {
 
         let elapsed = ContinuousClock.now - start
         let final = counters.snapshot()
-        continuation.yield(.finished(
-            duration: elapsed,
-            filesScanned: final.filesScanned,
-            foldersSkipped: final.foldersSkipped,
-            tccDeniedFolders: final.tccDeniedFolders
-        ))
+        // A cancelled walk must not report `.finished` — the UI would treat a
+        // partial tree as a successful complete scan and start FSEvents as if
+        // the walk had run to completion.
+        if Task.isCancelled {
+            continuation.yield(.cancelled(
+                duration: elapsed,
+                filesScanned: final.filesScanned,
+                foldersSkipped: final.foldersSkipped,
+                tccDeniedFolders: final.tccDeniedFolders
+            ))
+        } else {
+            continuation.yield(.finished(
+                duration: elapsed,
+                filesScanned: final.filesScanned,
+                foldersSkipped: final.foldersSkipped,
+                tccDeniedFolders: final.tccDeniedFolders
+            ))
+        }
         continuation.finish()
     }
 

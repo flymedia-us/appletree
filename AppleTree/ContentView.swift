@@ -5,7 +5,7 @@ import os
 import SwiftUI
 import UniformTypeIdentifiers
 
-private let log = Logger(subsystem: "com.samfriedman.AppleTree", category: "ContentView")
+private let log = Logger(subsystem: "com.FlyMedia.AppleTree", category: "ContentView")
 
 struct ContentView: View {
     var appState: AppState
@@ -29,47 +29,55 @@ struct ContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
             }
-            VSplitView {
-                HSplitView {
-                    FileTreeView(
+            ZStack {
+                VSplitView {
+                    HSplitView {
+                        FileTreeView(
+                            rootNode: appState.rootNode,
+                            selection: appState.selection,
+                            treeVersion: appState.scanGeneration,
+                            isScanning: appState.isScanning,
+                            externallyDeletedNodeIDs: appState.externallyDeletedNodeIDs,
+                            confirmBeforeDelete: confirmBeforeDelete,
+                            colorScheme: colorScheme,
+                            onTreeMutated: appState.notifyTreeMutated,
+                            onDeleteFailed: appState.reportDeleteFailure
+                        )
+                            .frame(minWidth: 320)
+                            // `HSplitView` doesn't expose a percentage-based
+                            // initial-size API (and ignores `idealWidth` as a
+                            // proportion hint), so the only reliable way to set
+                            // a default 60/40 divider position is to reach into
+                            // the underlying `NSSplitView` directly once, right
+                            // after its first layout.
+                            .background(SplitDividerPositioner(fraction: 0.6))
+                        ExtensionSummaryView(
+                            rootNode: appState.rootNode,
+                            treeVersion: appState.scanGeneration,
+                            colorScheme: colorScheme,
+                            onRecomputeFinished: appState.extensionSummaryDidFinishRendering
+                        )
+                            .frame(minWidth: 260)
+                    }
+                    .frame(minHeight: 180)
+                    TreemapView(
                         rootNode: appState.rootNode,
                         selection: appState.selection,
                         treeVersion: appState.scanGeneration,
-                        isScanning: appState.isScanning,
-                        externallyDeletedNodeIDs: appState.externallyDeletedNodeIDs,
-                        confirmBeforeDelete: confirmBeforeDelete,
-                        colorScheme: colorScheme,
-                        onTreeMutated: appState.notifyTreeMutated,
-                        onDeleteFailed: appState.reportDeleteFailure
+                        onRelayoutFinished: appState.treemapDidFinishRendering
                     )
-                        .frame(minWidth: 320)
-                        // `HSplitView` doesn't expose a percentage-based
-                        // initial-size API (and ignores `idealWidth` as a
-                        // proportion hint), so the only reliable way to set
-                        // a default 60/40 divider position is to reach into
-                        // the underlying `NSSplitView` directly once, right
-                        // after its first layout.
-                        .background(SplitDividerPositioner(fraction: 0.6))
-                    ExtensionSummaryView(
-                        rootNode: appState.rootNode,
-                        treeVersion: appState.scanGeneration,
-                        colorScheme: colorScheme,
-                        onRecomputeFinished: appState.extensionSummaryDidFinishRendering
-                    )
-                        .frame(minWidth: 260)
+                        .frame(minHeight: 180)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Treemap")
+                        .accessibilityValue(treemapAccessibilityValue)
+                        .accessibilityHint("Visual map of disk usage by file size. Selection follows the Tree View.")
                 }
-                .frame(minHeight: 180)
-                TreemapView(
-                    rootNode: appState.rootNode,
-                    selection: appState.selection,
-                    treeVersion: appState.scanGeneration,
-                    onRelayoutFinished: appState.treemapDidFinishRendering
-                )
-                    .frame(minHeight: 180)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Treemap")
-                    .accessibilityValue(treemapAccessibilityValue)
-                    .accessibilityHint("Visual map of disk usage by file size. Selection follows the Tree View.")
+                .opacity(showEmptyState ? 0 : 1)
+                .allowsHitTesting(!showEmptyState)
+
+                if showEmptyState {
+                    EmptyScanStateView(onChooseFolder: appState.presentFolderPickerAndScan)
+                }
             }
         }
         .frame(minWidth: 800, idealWidth: 1200, minHeight: 480, idealHeight: 800)
@@ -77,6 +85,10 @@ struct ContentView: View {
             guard !appState.isScanning else { return false }
             return handleFolderDrop(providers)
         }
+    }
+
+    private var showEmptyState: Bool {
+        appState.rootNode == nil && !appState.isScanning
     }
 
     private var treemapAccessibilityValue: String {
@@ -114,9 +126,20 @@ struct ContentView: View {
             }
 
             if let errorMessage = appState.errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.red)
-                    .font(.body)
+                HStack(spacing: 6) {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                        .font(.body)
+                        .lineLimit(2)
+                    Button {
+                        appState.clearErrorMessage()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dismiss")
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -139,10 +162,22 @@ struct ContentView: View {
         } else if appState.isLoadingTree {
             Text("Loading tree...")
                 .font(.body)
+        } else if appState.scanWasCancelled {
+            if let duration = appState.lastScanDuration {
+                Text("Scan cancelled after \(Self.secondsString(Self.seconds(from: duration))) seconds — showing partial results")
+                    .font(.body)
+            } else {
+                Text("Scan cancelled — showing partial results")
+                    .font(.body)
+            }
         } else if let duration = appState.lastScanDuration {
-            Text("Scan completed in \(Self.secondsString(Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18)) seconds")
+            Text("Scan completed in \(Self.secondsString(Self.seconds(from: duration))) seconds")
                 .font(.body)
         }
+    }
+
+    private static func seconds(from duration: Duration) -> Double {
+        Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
     }
 
     private static func secondsString(_ seconds: Double) -> String {
@@ -174,10 +209,39 @@ struct ContentView: View {
                 return
             }
             Task { @MainActor in
-                appState.startScan(root: url)
+                appState.startScanFromDroppedFolder(url)
             }
         }
         return true
+    }
+}
+
+/// First-run / empty-window prompt — brand + one CTA, no dashboard clutter.
+private struct EmptyScanStateView: View {
+    let onChooseFolder: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "externaldrive.badge.timemachine")
+                .font(.system(size: 48, weight: .light))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text("Apple Tree")
+                .font(.largeTitle.weight(.semibold))
+            Text("Choose a folder or volume to see what’s using disk space.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Choose Folder…", action: onChooseFolder)
+                .keyboardShortcut(.defaultAction)
+            Text("Or drag a folder onto this window")
+                .font(.callout)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: 420)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(32)
+        .accessibilityElement(children: .combine)
     }
 }
 

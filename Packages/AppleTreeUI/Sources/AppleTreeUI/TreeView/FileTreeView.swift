@@ -552,7 +552,9 @@ public struct FileTreeView: NSViewRepresentable {
             if confirmBeforeDelete, !confirmDelete(of: node) { return }
 
             let path = node.path
-            Task {
+            // Must hop back to the main actor for outline updates and the
+            // app-chrome error callback — Trash itself runs off-main.
+            Task { @MainActor in
                 do {
                     // `FileManager.trashItem` is a blocking syscall — usually
                     // a fast rename, but can involve a real copy for a large

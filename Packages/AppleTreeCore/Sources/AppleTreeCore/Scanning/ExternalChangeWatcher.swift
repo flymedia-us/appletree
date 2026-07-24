@@ -18,7 +18,7 @@ import os
 /// worth trusting is a fresh `stat` of the reported path at the moment the
 /// callback fires — self-correcting regardless of exactly which events did
 /// or didn't make it through.
-private let log = Logger(subsystem: "com.samfriedman.AppleTree", category: "ExternalChangeWatcher")
+private let log = Logger(subsystem: "com.FlyMedia.AppleTree", category: "ExternalChangeWatcher")
 
 public final class ExternalChangeWatcher: @unchecked Sendable {
     public struct PathChange: Sendable {
@@ -47,7 +47,7 @@ public final class ExternalChangeWatcher: @unchecked Sendable {
         var continuation: AsyncStream<[PathChange]>.Continuation?
     }
 
-    private let watchQueue = DispatchQueue(label: "com.samfriedman.AppleTree.ExternalChangeWatcher")
+    private let watchQueue = DispatchQueue(label: "com.FlyMedia.AppleTree.ExternalChangeWatcher")
     private let state: OSAllocatedUnfairLock<State>
 
     /// Starts watching `root` immediately and returns a stream of change
