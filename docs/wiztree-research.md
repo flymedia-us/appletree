@@ -4,7 +4,7 @@ Research notes to inform AppleTree's design. Based on the reference screenshot
 (`WizTree_REFERENCE/Tree_View.png`), WizTree's own docs/guide, third-party
 write-ups, and (historically) study of GrandPerspective's public source for
 algorithm/UI ideas — that tree is **no longer vendored** in this repository;
-Apple Tree's own code is original and licensed under GPLv3.
+AppleTree's own code is original and licensed under GPLv3.
 
 ## 1. UI Layout (from the reference screenshot)
 
@@ -182,7 +182,7 @@ were the right approach:
 goal** (as of the research date): GrandPerspective is GPL-2-or-later
 Objective-C/Cocoa (legacy AppKit patterns, copyleft). `phalladar/MacDirStat`
 is MIT Swift 6/SwiftUI with zero dependencies — closer stack to a green-field
-Swift rewrite. Apple Tree ultimately chose an original implementation under
+Swift rewrite. AppleTree ultimately chose an original implementation under
 **GPLv3** (GrandPerspective-style distribution), using these projects only
 as design/behavior references — no third-party app source is vendored.
 
@@ -193,7 +193,7 @@ as design/behavior references — no third-party app source is vendored.
 - Layout: a recursive binary-split "ordered/cushion treemap" (largest child
   carved off first, alternating split axis by aspect ratio) — same lineage as
   WinDirStat/SequoiaView, visually equivalent to WizTree's clean rectangular
-  blocks. Sound algorithm; Apple Tree reimplemented this family in Swift
+  blocks. Sound algorithm; AppleTree reimplemented this family in Swift
   independently.
 - Drawing historically: flat/gradient rectangle fills — little or no
   on-box text (labels were a gap vs WizTree).
@@ -208,7 +208,7 @@ As detailed in section 5: parallel-`fts` scanner with hardlink/clone dedup
 already written, Squarify treemap already rendered on `Canvas` with on-box
 text labels already implemented (name + size, size-gated), and a working
 (if basic) `OutlineGroup`-based tree sidebar already synced to treemap
-selection. Its MIT license would allow copying; Apple Tree did **not**
+selection. Its MIT license would allow copying; AppleTree did **not**
 import that code — techniques informed the design only. The main gap vs.
 our goal is the Tree View's column depth (no % of Parent, Allocated,
 Files/Folders columns/sort yet) — which is exactly the feature this project
@@ -236,7 +236,7 @@ documented techniques (TaskGroup-per-subdirectory traversal, inode-based
 hardlink/clone dedup, `Canvas`-based size-gated label rendering) and by
 GrandPerspective's published treemap layout *ideas*, without importing code
 from either. **Update (2026-07-24):** the former `GrandPerspective-3_7_2/`
-reference tree was removed from the repository; Apple Tree is licensed under
+reference tree was removed from the repository; AppleTree is licensed under
 GPLv3.
 
 ## 8. Recommendations mapped to project goals

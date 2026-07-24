@@ -577,13 +577,34 @@ public struct FileTreeView: NSViewRepresentable {
         /// `true` only when the user explicitly confirms.
         private func confirmDelete(of node: FileNode) -> Bool {
             let alert = NSAlert()
-            let kind = node.isDirectory ? "folder" : "file"
             alert.messageText = "Move “\(node.name)” to the Trash?"
-            alert.informativeText = "This \(kind) will be moved to the Trash. You can restore it from the Trash later."
+            alert.informativeText = Self.deleteConfirmationDetail(for: node)
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Move to Trash")
             alert.addButton(withTitle: "Cancel")
             return alert.runModal() == .alertFirstButtonReturn
+        }
+
+        /// Spells out *how much* is about to be trashed, not just what it's
+        /// called. The whole point of this app is finding large folders to
+        /// remove, so the number that actually informs the decision — total
+        /// size, and how many files are inside a directory — belongs in the
+        /// confirmation rather than a bare "this folder will be moved."
+        private static func deleteConfirmationDetail(for node: FileNode) -> String {
+            let size = SizeFormatting.string(for: node.displaySize)
+            let restoreNote = "You can restore it from the Trash later."
+
+            guard node.isDirectory else {
+                return "This file is \(size). \(restoreNote)"
+            }
+
+            let files = node.fileCount
+            let folders = node.folderCount
+            var contents = "\(SizeFormatting.countString(for: files)) file\(files == 1 ? "" : "s")"
+            if folders > 0 {
+                contents += " in \(SizeFormatting.countString(for: folders)) folder\(folders == 1 ? "" : "s")"
+            }
+            return "This folder contains \(contents), totaling \(size). \(restoreNote)"
         }
 
         private func markDeleted(_ node: FileNode) {

@@ -1,8 +1,8 @@
-# Apple Tree
+# AppleTree
 
 A high-speed disk space analyzer for macOS, inspired by the speed of **WizTree** on Windows and the visualization style of **GrandPerspective**.
 
-Apple Tree scans a folder or whole volume with a parallel, native `fts(3)`-based traversal and shows the result three ways at once — an expandable size-sorted outline, a flat breakdown by file extension, and an interactive treemap — all kept in sync with each other as you select, hover, and delete.
+AppleTree scans a folder or whole volume with a parallel, native `fts(3)`-based traversal and shows the result three ways at once — an expandable size-sorted outline, a flat breakdown by file extension, and an interactive treemap — all kept in sync with each other as you select, hover, and delete.
 
 ---
 
@@ -34,7 +34,7 @@ Source is licensed under the **GNU General Public License v3**. See [Known limit
 ## Known limitations
 
 - **App Store listing not yet live** — archive, upload, and review are owner steps; see [`docs/app-store-checklist.md`](docs/app-store-checklist.md).
-- **Placeholder app icon.** [`AppIcon.appiconset`](AppleTree/Assets.xcassets/AppIcon.appiconset) still needs final brand art before submission.
+- **Provisional app icon.** [`AppIcon.appiconset`](AppleTree/Assets.xcassets/AppIcon.appiconset) uses macOS-correct geometry (inset rounded rect) but still wants final brand art before submission.
 - **Privacy policy must be hosted** — draft at [`docs/privacy-policy.md`](docs/privacy-policy.md); App Store Connect needs a public HTTPS URL.
 - **English-only UI** — no localization yet.
 - **No direct-download updater** — free builds are manual until you publish release artifacts; Mac App Store builds update through the store.
@@ -45,7 +45,6 @@ Source is licensed under the **GNU General Public License v3**. See [Known limit
 AppleTree/                    App target (SwiftUI shell, AppState, entitlements, PrivacyInfo.xcprivacy)
 Packages/AppleTreeCore/       Scanning engine, FileNode model, categorization, treemap layout — no UI/framework dependencies
 Packages/AppleTreeUI/         AppKit-backed views (Tree View, Treemap, Extension Summary) as SwiftUI NSViewRepresentables
-WizTree_REFERENCE/            A reference screenshot of WizTree's UI
 docs/                         Privacy policy draft, App Store checklist, research notes
 ```
 
@@ -80,8 +79,24 @@ CI runs the same package tests on push/PR via [`.github/workflows/ci.yml`](.gith
 
 Copyright © 2026 Fly Media LLC.
 
-Apple Tree is free software: you can redistribute it and/or modify it under the terms of the [GNU General Public License](LICENSE) as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+AppleTree is free software: you can redistribute it and/or modify it under the terms of the [GNU General Public License](LICENSE) as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with this program (see [`LICENSE`](LICENSE)). If not, see <https://www.gnu.org/licenses/>.
+
+### Mac App Store distribution
+
+Fly Media LLC is the sole copyright holder of AppleTree and therefore also
+distributes this same software through the Mac App Store under Apple's standard
+licensing terms. That dual distribution is not a GPL violation: a copyright
+holder may license its own work on any terms it chooses, and the GPLv3 grant
+above remains in force for every copy obtained from this repository.
+
+The App Store binary is offered as a paid convenience (automatic updates and
+support for development). The source here is, and will remain, free software —
+you may always build it yourself at no cost.
+
+To keep this arrangement intact, contributions must be licensed to Fly Media LLC
+under terms that permit App Store redistribution. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.

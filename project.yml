@@ -31,15 +31,28 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Fly Media LLC"
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        # Without an explicit display name the menu bar and Finder fall back to
+        # CFBundleName, which GENERATE_INFOPLIST_FILE derives from the target
+        # name — keep both spelled the same as the UI strings and the About panel.
+        INFOPLIST_KEY_CFBundleDisplayName: AppleTree
+        # AppleTree makes no network connections and uses no encryption beyond
+        # what macOS itself provides. Declaring this here answers App Store
+        # Connect's export-compliance question at upload time instead of
+        # stalling every single build on the manual questionnaire.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         # Required alongside the matching sandbox entitlements in
         # AppleTree.entitlements — without these, macOS denies (or, for
         # Photos, crashes on) the access with no explanation shown to the
         # user. See com.apple.security.personal-information.photos-library
         # and com.apple.security.files.downloads.read-only.
-        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Apple Tree reads your Photos Library so a scan of your Pictures folder or whole disk can include its size."
-        INFOPLIST_KEY_NSDownloadsFolderUsageDescription: "Apple Tree reads your Downloads folder so a scan can include its size."
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "AppleTree reads your Photos Library so a scan of your Pictures folder or whole disk can include its size."
+        INFOPLIST_KEY_NSDownloadsFolderUsageDescription: "AppleTree reads your Downloads folder so a scan can include its size."
         CODE_SIGN_ENTITLEMENTS: AppleTree/AppleTree.entitlements
         CODE_SIGN_STYLE: Automatic
+        # Must live here, not only in the generated pbxproj: `xcodegen generate`
+        # rewrites the project from this file, so a team set by hand in Xcode
+        # is silently dropped the next time anyone regenerates.
+        DEVELOPMENT_TEAM: BJZSH247Q9
         ENABLE_HARDENED_RUNTIME: YES
         SWIFT_STRICT_CONCURRENCY: complete
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

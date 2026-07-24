@@ -27,7 +27,7 @@ struct AppleTreeApp: App {
         // Single primary window — avoids multi-window copies of one scan
         // state fighting each other. File → Open Folder… still works via
         // the replaced New Item command group below.
-        Window("Apple Tree", id: "main") {
+        Window("AppleTree", id: "main") {
             ContentView(appState: appState, colorScheme: resolvedScheme)
                 .preferredColorScheme(resolvedScheme)
                 .background(WindowAppearanceApplicator(appearance: resolvedNSAppearance))
@@ -40,7 +40,7 @@ struct AppleTreeApp: App {
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .appInfo) {
-                Button("About Apple Tree") {
+                Button("About AppleTree") {
                     Self.showAboutPanel()
                 }
             }
@@ -81,7 +81,7 @@ struct AppleTreeApp: App {
         )
         NSApp.orderFrontStandardAboutPanel(options: [
             .credits: credits,
-            .applicationName: "Apple Tree",
+            .applicationName: "AppleTree",
         ])
     }
 }

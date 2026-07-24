@@ -1,16 +1,16 @@
-# Privacy Policy — Apple Tree
+# Privacy Policy — AppleTree
 
 **Last updated:** 24 July 2026  
 **Publisher:** Fly Media LLC  
-**Product:** Apple Tree (macOS)
+**Product:** AppleTree (macOS)
 
-This policy describes how Apple Tree handles information. Host this document
+This policy describes how AppleTree handles information. Host this document
 (or an equivalent page) at a stable HTTPS URL before submitting to the Mac
 App Store — App Store Connect requires a public privacy policy link.
 
 ## Summary
 
-Apple Tree is a **local** disk space analyzer. It does **not** create accounts,
+AppleTree is a **local** disk space analyzer. It does **not** create accounts,
 does **not** collect personal data for analytics or advertising, and does
 **not** send your files or scan results over the network.
 
@@ -38,20 +38,20 @@ close the window or start a new scan.
 
 ## Permissions and system access
 
-Apple Tree runs in the **App Sandbox**. Access to your files is limited to:
+AppleTree runs in the **App Sandbox**. Access to your files is limited to:
 
 - Folders you explicitly select (security-scoped access)
 - Certain entitlement-covered locations (e.g. Downloads / Pictures / Music /
   Movies read access, Photos Library usage description for size inclusion)
 
 Some folders (especially under `~/Library`) are protected by macOS privacy
-(TCC). If a scan skips those folders, Apple Tree may suggest enabling
+(TCC). If a scan skips those folders, AppleTree may suggest enabling
 **Full Disk Access** in System Settings. Granting Full Disk Access is
 optional; the app works without it for folders you can already open.
 
 ## Children’s privacy
 
-Apple Tree is a general-purpose utility. It does not knowingly collect any
+AppleTree is a general-purpose utility. It does not knowingly collect any
 personal information from children.
 
 ## Changes

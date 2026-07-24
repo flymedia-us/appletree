@@ -22,3 +22,26 @@ jobs:
       - name: Test AppleTreeUI
         working-directory: Packages/AppleTreeUI
         run: swift test
+
+  build:
+    name: App target (Release)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      # The package suites above never compile AppleTree/ itself, so without
+      # this the whole SwiftUI shell (AppState, ContentView, the AppKit
+      # representable wiring) can break without CI noticing. Signing is off:
+      # this job proves it compiles, not that it's distributable.
+      - name: Build app target
+        run: |
+          xcodebuild \
+            -project AppleTree.xcodeproj \
+            -scheme AppleTree \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build

@@ -29,7 +29,7 @@ struct SettingsView: View {
             }
             Section("Permissions") {
                 Toggle("Don't ask again about Full Disk Access", isOn: $fdaNudgeDismissed)
-                Text("When a scan skips folders that Full Disk Access would unlock, Apple Tree can show a banner. Turn this off to see that banner again.")
+                Text("When a scan skips folders that Full Disk Access would unlock, AppleTree can show a banner. Turn this off to see that banner again.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

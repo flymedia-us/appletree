@@ -157,10 +157,10 @@ struct ContentView: View {
     @ViewBuilder
     private var scanTimerText: some View {
         if appState.isScanning {
-            Text("Scanning... (Folders: \(SizeFormatting.countString(for: appState.foldersScanned)) Files: \(SizeFormatting.countString(for: appState.filesScanned)))")
+            Text("Scanning… (Folders: \(SizeFormatting.countString(for: appState.foldersScanned)) Files: \(SizeFormatting.countString(for: appState.filesScanned)))")
                 .font(.body)
         } else if appState.isLoadingTree {
-            Text("Loading tree...")
+            Text("Loading tree…")
                 .font(.body)
         } else if appState.scanWasCancelled {
             if let duration = appState.lastScanDuration {
@@ -226,7 +226,7 @@ private struct EmptyScanStateView: View {
                 .font(.system(size: 48, weight: .light))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            Text("Apple Tree")
+            Text("AppleTree")
                 .font(.largeTitle.weight(.semibold))
             Text("Choose a folder or volume to see what’s using disk space.")
                 .font(.body)

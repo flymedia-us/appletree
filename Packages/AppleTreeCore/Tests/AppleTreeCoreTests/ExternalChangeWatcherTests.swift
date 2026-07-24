@@ -21,18 +21,29 @@ struct ExternalChangeWatcherTests {
         return URL(fileURLWithPath: String(cString: buffer), isDirectory: true)
     }
 
-    /// Races "the stream reports a change at `path`" against a generous
-    /// timeout, so a genuine detection failure fails the test in bounded
-    /// time instead of hanging.
+    /// Races "the stream reports a change at `path` satisfying `matching`"
+    /// against a generous timeout, so a genuine detection failure fails the
+    /// test in bounded time instead of hanging.
+    ///
+    /// Matching on the *state* rather than just the path is load-bearing, not
+    /// defensive: `ExternalChangeWatcher` deliberately reports a fresh `stat`
+    /// per event instead of trusting FSEvents' flag bits (see its doc
+    /// comment), so one path legitimately produces several changes — including
+    /// one for the fixture file's own creation, which FSEvents still delivers
+    /// even though it happened before `FSEventStreamStart`. Taking the first
+    /// batch that merely *mentions* the path made these tests fail
+    /// deterministically in isolation and pass only when earlier suites
+    /// happened to advance the FSEvents watermark first.
     private func awaitChange(
         for path: String,
+        matching: @escaping @Sendable (ExternalChangeWatcher.PathChange) -> Bool = { _ in true },
         in stream: AsyncStream<[ExternalChangeWatcher.PathChange]>,
         timeoutSeconds: Double = 5
     ) async -> ExternalChangeWatcher.PathChange? {
         await withTaskGroup(of: ExternalChangeWatcher.PathChange?.self) { group in
             group.addTask {
                 for await batch in stream {
-                    if let match = batch.first(where: { $0.path == path }) {
+                    if let match = batch.first(where: { $0.path == path && matching($0) }) {
                         return match
                     }
                 }
@@ -65,7 +76,9 @@ struct ExternalChangeWatcherTests {
         try await Task.sleep(for: .milliseconds(300))
         try FileManager.default.removeItem(at: file)
 
-        let change = try #require(await awaitChange(for: file.path, in: stream))
+        let change = try #require(
+            await awaitChange(for: file.path, matching: { !$0.stillExists }, in: stream)
+        )
         #expect(change.stillExists == false)
     }
 
@@ -82,11 +95,15 @@ struct ExternalChangeWatcherTests {
 
         try await Task.sleep(for: .milliseconds(300))
         try FileManager.default.removeItem(at: file)
-        let deleted = try #require(await awaitChange(for: file.path, in: stream))
+        let deleted = try #require(
+            await awaitChange(for: file.path, matching: { !$0.stillExists }, in: stream)
+        )
         #expect(deleted.stillExists == false)
 
         try Data("reborn".utf8).write(to: file)
-        let recreated = try #require(await awaitChange(for: file.path, in: stream))
+        let recreated = try #require(
+            await awaitChange(for: file.path, matching: { $0.stillExists }, in: stream)
+        )
         #expect(recreated.stillExists == true)
     }
 }

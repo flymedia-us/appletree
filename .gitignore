@@ -12,3 +12,7 @@ DerivedData/
 
 # macOS
 .DS_Store
+
+# Third-party reference material (not redistributable)
+WizTree_REFERENCE/
+GrandPerspective*/

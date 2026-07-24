@@ -1,6 +1,6 @@
 # Mac App Store submission checklist
 
-Owner tasks for Apple Tree **1.0.0** (`com.FlyMedia.AppleTree`). The repo is
+Owner tasks for AppleTree **1.0.0** (`com.FlyMedia.AppleTree`). The repo is
 prepared for a **GrandPerspective-style** distribution: free builds from
 GitHub (GPLv3) plus a small paid Mac App Store listing of the same app.
 
@@ -9,8 +9,11 @@ GitHub (GPLv3) plus a small paid Mac App Store listing of the same app.
 - [ ] Apple Developer Program membership active (organization: Fly Media LLC)
 - [ ] App ID `com.FlyMedia.AppleTree` registered; Mac App Store distribution
       provisioning profile / automatic signing with team `BJZSH247Q9`
-- [ ] Final **App Icon** art replacing the placeholder in
-      `AppleTree/Assets.xcassets/AppIcon.appiconset` (all required macOS sizes)
+- [ ] Final **App Icon** brand art replacing the provisional treemap in
+      `AppleTree/Assets.xcassets/AppIcon.appiconset` (all required macOS sizes).
+      The current art already uses macOS geometry — an 824pt rounded-rect body
+      inset in a 1024pt canvas with a drop shadow, *not* a full-bleed iOS
+      square — so keep that inset if you replace it.
 - [ ] Privacy policy hosted at a public HTTPS URL (draft:
       [`privacy-policy.md`](privacy-policy.md))
 - [ ] App Store Connect record created; category **Utilities**; price set
@@ -23,17 +26,39 @@ GitHub (GPLv3) plus a small paid Mac App Store listing of the same app.
 - [ ] Name, subtitle, description, keywords, support URL, marketing URL
 - [ ] Privacy policy URL
 - [ ] Age rating questionnaire (utility; no objectionable content expected)
-- [ ] Export compliance: uses only standard OS encryption (HTTPS not used by
-      the app today — answer accordingly)
+- [ ] Export compliance: already declared in the build settings
+      (`ITSAppUsesNonExemptEncryption = NO`), so uploads should no longer stop
+      to ask. Verify the answer carried over on the first submission.
 - [ ] Mac screenshots (recommended: main window after a scan; empty state;
       Settings) for required display sizes
 - [ ] Review notes: explain sandbox + folder picker; optional Full Disk Access
       for `~/Library`; deletion moves to Trash with confirmation by default;
       no network / no account; source under GPLv3 on GitHub
 
+### Review notes — items that need pre-empting
+
+Reviewers reliably ask about these three. Answer them in the submission notes
+rather than waiting for a rejection round-trip:
+
+- [ ] **App name.** "AppleTree" uses *apple* as the common noun (the tree), not
+      Apple Inc. Apple's trademark guidelines list "Appletree" as an example of
+      an unacceptable name, so state the generic usage explicitly, note that the
+      icon and branding make no reference to Apple Inc., and that no Apple logo
+      or trademark appears in the app. Be prepared for a 5.2.5 challenge.
+- [ ] **Photos Library entitlement.** `com.apple.security.personal-information.photos-library`
+      is declared but the app links no PhotoKit and reads no photo *content*. It
+      is required purely so the sandbox can traverse
+      `~/Pictures/Photos Library.photoslibrary` and total its size — for most
+      users that bundle is the single largest item in Pictures, so omitting it
+      would make a Pictures or whole-disk scan silently under-report. Say this
+      plainly; an unexercised privacy entitlement otherwise reads as overreach.
+- [ ] **GPLv3 source alongside a paid listing.** Fly Media LLC is the sole
+      copyright holder and licenses the same code both ways; contributions are
+      gated by a CLA (`CONTRIBUTING.md`) so this stays true. Link the repo.
+
 ## Build & submit
 
-- [ ] Archive a **Release** build in Xcode (scheme **Apple Tree**)
+- [ ] Archive a **Release** build in Xcode (scheme **AppleTree**)
 - [ ] Validate and upload to App Store Connect
 - [ ] Submit for review
 
