@@ -334,58 +334,30 @@ final class AppState {
             pendingExternalChanges.removeAll()
             return
         }
-        var resolver = ExternalChangeResolver(root: rootNode)
+        // One applier for the whole drain: its path/name caches are what make
+        // a run of sibling deletions cheap, and the paths that share a
+        // directory are precisely the ones that arrive together.
+        var applier = ExternalChangeApplier(root: rootNode)
         while !pendingExternalChanges.isEmpty, !Task.isCancelled {
-            let chunk: [(path: String, stillExists: Bool)]
+            let chunk: [ExternalChangeApplier.Change]
             if pendingExternalChanges.count <= Self.externalChangeChunkSize {
-                chunk = pendingExternalChanges.map { (path: $0.key, stillExists: $0.value) }
+                chunk = pendingExternalChanges.map { .init(path: $0.key, stillExists: $0.value) }
                 pendingExternalChanges.removeAll(keepingCapacity: true)
             } else {
                 chunk = pendingExternalChanges.prefix(Self.externalChangeChunkSize)
-                    .map { (path: $0.key, stillExists: $0.value) }
-                for entry in chunk {
-                    pendingExternalChanges.removeValue(forKey: entry.path)
+                    .map { .init(path: $0.key, stillExists: $0.value) }
+                for change in chunk {
+                    pendingExternalChanges.removeValue(forKey: change.path)
                 }
             }
 
-            applyExternalChanges(chunk, resolver: &resolver)
+            if !applier.apply(chunk).isEmpty {
+                bumpGeneration()
+            }
             if !pendingExternalChanges.isEmpty {
                 await Task.yield()
             }
         }
-    }
-
-    private func applyExternalChanges(
-        _ changes: [(path: String, stillExists: Bool)],
-        resolver: inout ExternalChangeResolver
-    ) {
-        // Shortest path first, which for a filesystem path means every
-        // ancestor before any of its descendants. That ordering is what lets
-        // the `isRemovedOrHasRemovedAncestor` check below discard a deleted
-        // folder's entire contents in O(1) each: the folder's own change is
-        // already applied by the time its children are looked at, and nothing
-        // under an excluded directory can change any aggregate.
-        let ordered = changes.sorted { $0.path.utf8.count < $1.path.utf8.count }
-
-        var changedNodes: [FileNode] = []
-        for change in ordered {
-            guard let node = resolver.node(atPath: change.path) else { continue }
-            if change.stillExists {
-                // Recomputes ancestor sizes back up now that this node counts
-                // again — mirrors the in-app Trash path (see
-                // `FileNode.markRemoved()`'s doc comment) so a file recreated
-                // (or a delete undone) outside the app is reflected in the
-                // Tree View/Treemap/Extension Summary without a rescan.
-                if node.setRemovedState(false) { changedNodes.append(node) }
-            } else {
-                guard !node.isRemovedOrHasRemovedAncestor else { continue }
-                if node.setRemovedState(true) { changedNodes.append(node) }
-            }
-        }
-
-        guard !changedNodes.isEmpty else { return }
-        FileNode.refinalizeAncestors(of: changedNodes)
-        bumpGeneration()
     }
 
     private func handle(_ event: ScanEvent) {
@@ -565,77 +537,5 @@ final class AppState {
             self.pendingGenerationBumpTask = nil
             self.bumpGeneration(force: true)
         }
-    }
-}
-
-/// Resolves external-change paths to `FileNode`s, reusing the work that
-/// consecutive paths in the same batch have in common.
-///
-/// `FileNode.descendant(atPath:)` walks from the root doing a linear
-/// name search at every level, which is the right shape for the one-off
-/// lookup it was written for but quadratic for what a bulk delete produces:
-/// thousands of paths that are mostly siblings, each re-walking the same
-/// prefix and re-scanning the same (possibly enormous) sibling list. Caching
-/// the resolved directory per parent path, and indexing that directory's
-/// children by name once, turns `n` siblings under one directory of `k`
-/// children from `O(n · k)` into `O(n + k)`.
-///
-/// Scoped to a single drain rather than kept for the tree's lifetime: the
-/// index is only sound while nothing is appending children, and bounding its
-/// lifetime bounds its memory without giving up the win, since the paths that
-/// share directories are precisely the ones that arrive together.
-private struct ExternalChangeResolver {
-    private let root: FileNode
-    /// `FileNode.path` rebuilds a string by walking the parent chain on every
-    /// read, so the one path compared against every single change is worth
-    /// holding onto.
-    private let rootPath: String
-    private var directories: [String: FileNode] = [:]
-    private var childrenByName: [FileNode.ID: [String: FileNode]] = [:]
-    private var indexedChildren = 0
-
-    /// Ceiling on how many children the name indexes may hold before they're
-    /// dropped and rebuilt on demand. Deleting an entire volume's worth of
-    /// files would otherwise let them grow to roughly one entry per node in
-    /// the tree — a lot of memory to hold transiently for a cache whose whole
-    /// value comes from consecutive paths sharing a directory, which the
-    /// most recently indexed ones still do after a reset.
-    private static let indexedChildrenCap = 250_000
-
-    init(root: FileNode) {
-        self.root = root
-        self.rootPath = root.path
-    }
-
-    mutating func node(atPath path: String) -> FileNode? {
-        if path == rootPath { return root }
-        guard let separator = path.lastIndex(of: "/") else { return nil }
-        let parentPath = separator == path.startIndex ? "/" : String(path[path.startIndex..<separator])
-        let name = String(path[path.index(after: separator)...])
-        guard !name.isEmpty, let parent = directory(atPath: parentPath) else { return nil }
-        return index(of: parent)[name]
-    }
-
-    private mutating func directory(atPath path: String) -> FileNode? {
-        if let cached = directories[path] { return cached }
-        guard let resolved = root.descendant(atPath: path) else { return nil }
-        directories[path] = resolved
-        return resolved
-    }
-
-    private mutating func index(of directory: FileNode) -> [String: FileNode] {
-        if let cached = childrenByName[directory.id] { return cached }
-        if indexedChildren > Self.indexedChildrenCap {
-            childrenByName.removeAll(keepingCapacity: true)
-            indexedChildren = 0
-        }
-        let children = directory.children
-        var index = [String: FileNode](minimumCapacity: children.count)
-        for child in children {
-            index[child.name] = child
-        }
-        childrenByName[directory.id] = index
-        indexedChildren += children.count
-        return index
     }
 }

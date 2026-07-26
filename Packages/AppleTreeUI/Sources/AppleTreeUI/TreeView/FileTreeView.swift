@@ -318,7 +318,7 @@ public struct FileTreeView: NSViewRepresentable {
 
         public func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
             let node = (item as? FileNode) ?? rootNode
-            return node?.children.count ?? 0
+            return node?.childCount ?? 0
         }
 
         public func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
@@ -328,7 +328,7 @@ public struct FileTreeView: NSViewRepresentable {
 
         public func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
             guard let node = item as? FileNode else { return false }
-            return node.isDirectory && !node.children.isEmpty
+            return node.isDirectory && node.hasChildren
         }
 
         public func outlineView(_ outlineView: NSOutlineView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {

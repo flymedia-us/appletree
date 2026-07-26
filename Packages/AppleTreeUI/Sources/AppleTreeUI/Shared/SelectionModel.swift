@@ -9,8 +9,9 @@ import Observation
 /// it makes the selection, and every consumer works on the *same* shared
 /// `FileNode` object graph — so keeping the reference lets both panes and the
 /// accessibility layer read the selection in O(1) instead of re-resolving an
-/// `ID` with a full-tree walk (`FileNode.descendant(withID:)`) on every
-/// treemap tap and every SwiftUI render. `…ID` accessors remain for
+/// `ID` with a full-tree walk on every treemap tap and every SwiftUI render.
+/// No such by-ID lookup exists on `FileNode` at all any more, deliberately —
+/// see the comment where it used to live. `…ID` accessors remain for
 /// call sites that only need identity comparison.
 @Observable
 @MainActor

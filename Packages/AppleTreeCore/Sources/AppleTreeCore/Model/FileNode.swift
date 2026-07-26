@@ -90,6 +90,22 @@ public final class FileNode: @unchecked Sendable {
         childrenLock?.withLock { $0 } ?? []
     }
 
+    /// How many immediate children this node has, without vending a copy of
+    /// them. `children.count` reads naturally but allocates an array and
+    /// retains every sibling just to read an integer — and `NSOutlineView`
+    /// asks this (via `numberOfChildrenOfItem:`) for every expanded item on
+    /// every reload, of which an active scan triggers about ten a second.
+    public var childCount: Int {
+        childrenLock?.withLock { $0.count } ?? 0
+    }
+
+    /// Whether this node has any immediate children — same reasoning as
+    /// `childCount`, for the `isItemExpandable:` callback the outline view
+    /// makes once per rendered row.
+    public var hasChildren: Bool {
+        childrenLock?.withLock { !$0.isEmpty } ?? false
+    }
+
     /// Allocated only for directories. A file is always a leaf, so it would
     /// never hold anything but an empty array — and `OSAllocatedUnfairLock`
     /// is its own heap allocation, so on a file-dominated tree (the common
@@ -250,15 +266,14 @@ extension FileNode: Identifiable {
 }
 
 extension FileNode {
-    /// Depth-first lookup by reference identity. Used by UI layers that hold
-    /// a `FileNode.ID` (selection, accessibility) and need the live node.
-    public func descendant(withID id: FileNode.ID) -> FileNode? {
-        if self.id == id { return self }
-        for child in children {
-            if let found = child.descendant(withID: id) { return found }
-        }
-        return nil
-    }
+    // Deliberately no `descendant(withID:)` here. A depth-first walk of the
+    // whole tree to turn an `ID` back into a node reads as a harmless
+    // convenience and is anything but: called once per changed node it is
+    // quadratic, and the UI layer's own copy of it (`findNode(withID:)`) was
+    // the single largest cause of the app locking up for minutes after a bulk
+    // external delete. Every producer of a selection already holds the node
+    // — see `SelectionModel`, which stores the reference for exactly this
+    // reason — so nothing needs to search for one.
 
     /// Appends a child (scanner-internal mutation; see the type-level
     /// concurrency invariant). Does not update `logicalSize`/`allocatedSize`/
