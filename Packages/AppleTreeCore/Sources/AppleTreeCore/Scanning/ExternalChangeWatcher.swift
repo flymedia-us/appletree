@@ -127,10 +127,32 @@ public final class ExternalChangeWatcher: @unchecked Sendable {
     /// per changed path.
     private func handleEvents(eventPaths: UnsafeMutableRawPointer) {
         guard let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] else { return }
-        let changes = paths.map { path in
-            PathChange(path: path, stillExists: FileManager.default.fileExists(atPath: path))
+        // One check per *distinct* path. FSEvents routinely reports the same
+        // path several times in a single callback (a write, a rename and an
+        // attribute change on one file all coalesce into the same batch), and
+        // a bulk delete makes a batch thousands of paths long — deduplicating
+        // here saves both the syscalls and the downstream per-path work, and
+        // the answer for a repeated path is identical anyway since every one
+        // of them would be checked at the same moment.
+        var seen = Set<String>(minimumCapacity: paths.count)
+        var changes: [PathChange] = []
+        changes.reserveCapacity(paths.count)
+        for path in paths where seen.insert(path).inserted {
+            changes.append(PathChange(path: path, stillExists: Self.pathExists(path)))
         }
+        guard !changes.isEmpty else { return }
         state.withLock { $0.continuation }?.yield(changes)
+    }
+
+    /// `lstat` rather than `FileManager.fileExists(atPath:)`: cheaper (no
+    /// `FileManager` bookkeeping or path bridging per call, which matters at
+    /// thousands of calls per batch), and more accurate for the question
+    /// actually being asked. `fileExists` follows symlinks, so a symlink
+    /// whose *target* was deleted would be reported as gone even though the
+    /// directory entry the scan recorded — and sized — is still on disk.
+    private static func pathExists(_ path: String) -> Bool {
+        var info = stat()
+        return lstat(path, &info) == 0
     }
 
     public func stop() {

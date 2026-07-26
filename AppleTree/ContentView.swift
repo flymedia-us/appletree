@@ -37,7 +37,6 @@ struct ContentView: View {
                             selection: appState.selection,
                             treeVersion: appState.scanGeneration,
                             isScanning: appState.isScanning,
-                            externallyDeletedNodeIDs: appState.externallyDeletedNodeIDs,
                             confirmBeforeDelete: confirmBeforeDelete,
                             colorScheme: colorScheme,
                             onTreeMutated: appState.notifyTreeMutated,

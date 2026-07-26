@@ -50,6 +50,12 @@ public final class FileNode: @unchecked Sendable {
     }
     private let aggregateLock: OSAllocatedUnfairLock<Aggregate>
 
+    /// Every aggregate field at once, for one lock acquisition. Callers that
+    /// need more than one of them — `finalizeAsDirectory`'s sort key and sum
+    /// loop, which between them touch five per child — would otherwise pay a
+    /// separate acquisition per property per child.
+    private var aggregateSnapshot: Aggregate { aggregateLock.withLock { $0 } }
+
     /// Sum of `st_size` for a file; sum of all descendant files' sizes for a
     /// directory. For directories this is only meaningful once the directory's
     /// scan has completed (i.e. after `subtreeCompleted` for it has fired).
@@ -212,10 +218,28 @@ public final class FileNode: @unchecked Sendable {
 
         var current = self
         for component in path.dropFirst(prefix.count).split(separator: "/") {
-            guard let next = current.children.first(where: { $0.name == component }) else { return nil }
+            guard let next = current.child(named: component) else { return nil }
             current = next
         }
         return current
+    }
+
+    /// An immediate child by name, searched *inside* the children lock rather
+    /// than through the `children` getter — that getter deliberately vends a
+    /// copy (see its doc comment), so a `children.first(where:)` lookup
+    /// allocates an array and retains/releases every sibling just to read one
+    /// of them. Resolving a path of depth d did that d times, per path; the
+    /// external-change watch resolves thousands of paths when a bulk delete
+    /// lands, which made those copies a real cost rather than a theoretical
+    /// one.
+    /// `Sendable` in the bound, not decoration: `withLock`'s closure is
+    /// `@Sendable` (see `children`), so the name has to be able to cross it —
+    /// which both `String` and the `Substring` that path-component splitting
+    /// produces already are.
+    public func child(named name: some StringProtocol & Sendable) -> FileNode? {
+        childrenLock?.withLock { children in
+            children.first { $0.name == name }
+        }
     }
 }
 
@@ -266,21 +290,38 @@ extension FileNode {
         // was set once at init. (Callers only invoke this on directories; this
         // guard makes the leaf case a safe no-op rather than a trap.)
         guard let childrenLock else { return }
-        let sortedChildren = childrenLock.withLock { state -> [FileNode] in
-            state.sort { $0.displaySize > $1.displaySize }
-            return state
+
+        // Snapshot each child's aggregate exactly once, then sort and sum off
+        // those numbers. The comparator used to read `displaySize` — a lock
+        // acquisition — twice per comparison, and the sum loop read four more
+        // locked properties per child, so this function's cost was dominated
+        // by `2·n·log n + 4n` lock round-trips rather than the work itself.
+        // On a directory with tens of thousands of children, recomputed once
+        // per affected ancestor per external-change batch, that is the whole
+        // expense.
+        //
+        // Snapshotting also makes the ordering self-consistent: re-reading a
+        // size that a scan worker or `markRemoved()` can change *during* the
+        // sort is a comparator that doesn't define a strict weak ordering,
+        // the same class of hazard `TreemapLayout.layoutChildren` already
+        // snapshots its way out of.
+        let sortedChildren = childrenLock.withLock { state -> [(node: FileNode, aggregate: Aggregate)] in
+            var decorated = state.map { (node: $0, aggregate: $0.aggregateSnapshot) }
+            decorated.sort { $0.aggregate.allocatedSize > $1.aggregate.allocatedSize }
+            state = decorated.map(\.node)
+            return decorated
         }
 
         var logical: UInt64 = 0
         var allocated: UInt64 = 0
         var files = 0
         var folders = 0
-        for child in sortedChildren where !child.isRemoved {
-            logical += child.logicalSize
-            allocated += child.allocatedSize
-            if child.isDirectory {
-                folders += 1 + child.folderCount
-                files += child.fileCount
+        for child in sortedChildren where !child.aggregate.isRemoved {
+            logical += child.aggregate.logicalSize
+            allocated += child.aggregate.allocatedSize
+            if child.node.isDirectory {
+                folders += 1 + child.aggregate.folderCount
+                files += child.aggregate.fileCount
             } else {
                 files += 1
             }
@@ -298,15 +339,56 @@ extension FileNode {
         }
     }
 
-    /// Recomputes every ancestor's aggregate from `self` up to the root —
-    /// the shared step both `markRemoved()` and `unmarkRemoved()` need,
-    /// since either one changes what its parent's (and *its* parent's, ...)
-    /// sums should add up to.
-    private func refinalizeAncestors() {
+    /// Distance from the scan root: `0` for a root node, `1` for its
+    /// children, and so on. Walked rather than stored — nothing else needs
+    /// it, and `refinalizeAncestors(of:)` reads it once per affected
+    /// directory, not per node.
+    private var depthFromRoot: Int {
+        var depth = 0
         var ancestor = parent
         while let node = ancestor {
-            node.finalizeAsDirectory()
+            depth += 1
             ancestor = node.parent
+        }
+        return depth
+    }
+}
+
+extension FileNode {
+    /// Recomputes the aggregates of every directory above `nodes`, visiting
+    /// each affected directory exactly once. The shared step both
+    /// `markRemoved()` and `unmarkRemoved()` need — either one changes what
+    /// its parent's (and *its* parent's, ...) sums should add up to — and the
+    /// step that makes a *bulk* removal affordable.
+    ///
+    /// Doing this one node at a time is what made a large external delete
+    /// unusable: `n` files vanishing from the same directory re-sorted and
+    /// re-summed that directory `n` times, and every directory above it `n`
+    /// times too, for `O(n · depth · siblings log siblings)` main-thread work
+    /// where the tree only actually changed in `depth` places. Collecting the
+    /// distinct ancestors first collapses that to
+    /// `O(n + affected directories × their children)`.
+    public static func refinalizeAncestors(of nodes: [FileNode]) {
+        var affected: [(depth: Int, node: FileNode)] = []
+        var seen: Set<FileNode.ID> = []
+        for node in nodes {
+            var ancestor = node.parent
+            // Stops at the first already-collected ancestor: everything above
+            // that point was collected on the walk that first reached it, so
+            // continuing would just re-tread a shared prefix once per node —
+            // exactly the `× depth` factor this function exists to remove.
+            while let current = ancestor, seen.insert(current.id).inserted {
+                affected.append((current.depthFromRoot, current))
+                ancestor = current.parent
+            }
+        }
+
+        // Deepest first, so a directory's own aggregate is already final by
+        // the time its parent sums it — one pass, no need to iterate to a
+        // fixed point.
+        affected.sort { $0.depth > $1.depth }
+        for entry in affected {
+            entry.node.finalizeAsDirectory()
         }
     }
 }
@@ -318,25 +400,53 @@ extension FileNode {
     /// View's parent rows, the treemap, and the extension breakdown all
     /// reflect the removal without waiting for a rescan. See `isRemoved`.
     public func markRemoved() {
-        let changed = aggregateLock.withLock { state -> Bool in
-            guard !state.isRemoved else { return false }
-            state.isRemoved = true
-            return true
-        }
-        guard changed else { return }
-        refinalizeAncestors()
+        guard setRemovedState(true) else { return }
+        Self.refinalizeAncestors(of: [self])
     }
 
     /// Reverses `markRemoved()` — for the external-change watch's "this path
     /// exists again" case (e.g. a file recreated, or a Trash action undone
     /// outside the app).
     public func unmarkRemoved() {
-        let changed = aggregateLock.withLock { state -> Bool in
-            guard state.isRemoved else { return false }
-            state.isRemoved = false
+        guard setRemovedState(false) else { return }
+        Self.refinalizeAncestors(of: [self])
+    }
+
+    /// Sets the removal flag *without* touching any ancestor, returning
+    /// whether it actually changed. Split out from `markRemoved()` so a
+    /// caller holding a whole batch of changes — the external-change watch,
+    /// which routinely gets thousands at once — can flag them all and then
+    /// pay for a single `refinalizeAncestors(of:)` pass, instead of one full
+    /// root-ward recompute per node.
+    ///
+    /// Flagging eagerly (rather than accumulating the intended states and
+    /// applying them at the end) is what lets such a caller process a batch
+    /// shallowest-path-first and then skip everything under a directory it
+    /// already flagged: `isRemovedOrHasRemovedAncestor` sees the decision the
+    /// moment it's made.
+    public func setRemovedState(_ removed: Bool) -> Bool {
+        aggregateLock.withLock { state in
+            guard state.isRemoved != removed else { return false }
+            state.isRemoved = removed
             return true
         }
-        guard changed else { return }
-        refinalizeAncestors()
+    }
+
+    /// True when this node is removed, or sits inside a directory that is.
+    ///
+    /// A deleted directory's descendants are gone too, but only the
+    /// directory's own node carries the flag — deliberately: stamping every
+    /// descendant of an `rm -rf`'d folder would be the same per-node cost
+    /// this batching exists to avoid, and it buys nothing, since every
+    /// aggregate and every visualization already stops at the removed
+    /// directory. Presentation code that needs to know whether an individual
+    /// row is live asks this instead of `isRemoved`.
+    public var isRemovedOrHasRemovedAncestor: Bool {
+        var current: FileNode? = self
+        while let node = current {
+            if node.isRemoved { return true }
+            current = node.parent
+        }
+        return false
     }
 }

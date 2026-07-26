@@ -38,17 +38,6 @@ final class AppState {
     private(set) var skippedFolderSample: [SkippedFolder] = []
     private static let skippedFolderSampleCap = 200
 
-    /// Paths scanned into the current tree that a live filesystem watch has
-    /// since found gone (deleted, or moved out from under their scanned
-    /// path — e.g. dragged to the Trash — from Finder, Terminal, or any
-    /// other process, not this app's own Delete action). Watching starts
-    /// once a scan finishes — see `startWatchingForExternalChanges` — so
-    /// this stays empty for the scan's own duration and resets on the next
-    /// scan. Kept separate from `FileTreeView`'s own `deletedNodeIDs` (which
-    /// tracks in-app Trash actions): this is core scan state, that's
-    /// UI-only presentation bookkeeping.
-    private(set) var externallyDeletedNodeIDs: Set<FileNode.ID> = []
-
     /// True for the window between the scanner finishing its filesystem walk
     /// (`.finished`) and the Treemap/Extension Summary panes actually
     /// finishing their own (debounced, backgrounded) relayout/recompute of
@@ -120,6 +109,8 @@ final class AppState {
 
     private var scanTask: Task<Void, Never>?
     private var lastGenerationBump: ContinuousClock.Instant = .now
+    private var pendingGenerationBumpTask: Task<Void, Never>?
+    private static let generationBumpInterval = Duration.milliseconds(100)
 
     private var scanRootURL: URL?
     /// The URL for which `startAccessingSecurityScopedResource()` succeeded.
@@ -128,6 +119,25 @@ final class AppState {
     private var securityScopedRootURL: URL?
     private var changeWatcher: ExternalChangeWatcher?
     private var changeWatchTask: Task<Void, Never>?
+
+    /// External changes the watch has reported but that haven't been applied
+    /// to the tree yet, keyed by path so repeated reports for one path
+    /// collapse to its most recent state. Drained by
+    /// `externalChangeDrainTask` — see `enqueueExternalChanges`.
+    private var pendingExternalChanges: [String: Bool] = [:]
+    private var externalChangeDrainTask: Task<Void, Never>?
+
+    /// How long to let external changes accumulate before applying them. A
+    /// bulk delete arrives as a rapid run of watcher batches, and each one
+    /// applied on its own re-resolves and re-sums the same few directories;
+    /// merging them first turns that run into a single pass.
+    private static let externalChangeCoalescingWindow = Duration.milliseconds(200)
+
+    /// The most external changes applied in one main-actor turn. Everything
+    /// past this waits for the next turn, so however enormous the delete, the
+    /// main thread is never held for more than one chunk's worth of work and
+    /// the window keeps drawing throughout.
+    private static let externalChangeChunkSize = 5_000
 
     /// Presents the standard folder picker and starts a scan on the chosen
     /// root. Shared by the toolbar button and File → Open Folder… so both
@@ -172,6 +182,8 @@ final class AppState {
         scanTask?.cancel()
         stopWatchingForExternalChanges()
         releaseSecurityScopedAccess()
+        pendingGenerationBumpTask?.cancel()
+        pendingGenerationBumpTask = nil
 
         rootNode = nil
         isScanning = true
@@ -189,7 +201,6 @@ final class AppState {
         isPermissionNudgeDismissed = false
         volumeInfo = VolumeInfo.forVolume(containing: root)
         skippedFolderSample = []
-        externallyDeletedNodeIDs = []
         selection.selectedNode = nil
         selection.hoveredNode = nil
 
@@ -261,7 +272,7 @@ final class AppState {
         changeWatcher = watcher
         changeWatchTask = Task { [weak self] in
             for await changes in stream {
-                self?.applyExternalChanges(changes)
+                self?.enqueueExternalChanges(changes)
             }
         }
     }
@@ -271,26 +282,109 @@ final class AppState {
         changeWatchTask = nil
         changeWatcher?.stop()
         changeWatcher = nil
+        externalChangeDrainTask?.cancel()
+        externalChangeDrainTask = nil
+        pendingExternalChanges = [:]
     }
 
-    private func applyExternalChanges(_ changes: [ExternalChangeWatcher.PathChange]) {
-        guard let rootNode else { return }
+    /// Merges a watcher batch into `pendingExternalChanges` and makes sure a
+    /// drain is scheduled. Deliberately touches no `FileNode` itself: this
+    /// runs for every batch the watch produces, and deleting a large folder
+    /// outside the app produces a long run of them in quick succession —
+    /// mostly siblings of each other. Collapsing them into one merged set
+    /// first means the expensive part (resolving paths, re-summing ancestors,
+    /// relaying out the treemap) happens once for the whole delete instead of
+    /// once per batch.
+    private func enqueueExternalChanges(_ changes: [ExternalChangeWatcher.PathChange]) {
+        guard rootNode != nil else { return }
         for change in changes {
-            guard let node = rootNode.descendant(atPath: change.path) else { continue }
-            if change.stillExists {
-                externallyDeletedNodeIDs.remove(node.id)
-                // Recomputes ancestor sizes back up now that this node
-                // counts again — mirrors the in-app Trash path (see
-                // `FileNode.markRemoved()`'s doc comment) so a file
-                // recreated (or a delete undone) outside the app is
-                // reflected in the Tree View/Treemap/Extension Summary
-                // without a rescan.
-                node.unmarkRemoved()
+            pendingExternalChanges[change.path] = change.stillExists
+        }
+        scheduleExternalChangeDrain()
+    }
+
+    private func scheduleExternalChangeDrain() {
+        guard externalChangeDrainTask == nil, !pendingExternalChanges.isEmpty else { return }
+        externalChangeDrainTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.externalChangeCoalescingWindow)
+            guard let self, !Task.isCancelled else { return }
+            await self.drainPendingExternalChanges()
+            // A cancellation means `stopWatchingForExternalChanges` already
+            // reset this state — and may already have started a fresh watch
+            // with a drain task of its own, which clearing the reference here
+            // would orphan.
+            guard !Task.isCancelled else { return }
+            self.externalChangeDrainTask = nil
+            // Anything the watch reported while that drain was running gets
+            // its own settle window rather than being applied immediately —
+            // a delete still in progress keeps refilling this, and each pass
+            // costs a treemap relayout and an extension recompute.
+            self.scheduleExternalChangeDrain()
+        }
+    }
+
+    /// Applies pending changes in bounded chunks, yielding between them.
+    /// Even fully batched, a single `rm -rf` can report hundreds of thousands
+    /// of paths, and applying all of them in one main-actor turn would freeze
+    /// the window for exactly as long as that takes. Chunking caps how long
+    /// the main thread is held at a time; the tree just lands in a few
+    /// successive passes instead of one.
+    private func drainPendingExternalChanges() async {
+        guard let rootNode else {
+            pendingExternalChanges.removeAll()
+            return
+        }
+        var resolver = ExternalChangeResolver(root: rootNode)
+        while !pendingExternalChanges.isEmpty, !Task.isCancelled {
+            let chunk: [(path: String, stillExists: Bool)]
+            if pendingExternalChanges.count <= Self.externalChangeChunkSize {
+                chunk = pendingExternalChanges.map { (path: $0.key, stillExists: $0.value) }
+                pendingExternalChanges.removeAll(keepingCapacity: true)
             } else {
-                externallyDeletedNodeIDs.insert(node.id)
-                node.markRemoved()
+                chunk = pendingExternalChanges.prefix(Self.externalChangeChunkSize)
+                    .map { (path: $0.key, stillExists: $0.value) }
+                for entry in chunk {
+                    pendingExternalChanges.removeValue(forKey: entry.path)
+                }
+            }
+
+            applyExternalChanges(chunk, resolver: &resolver)
+            if !pendingExternalChanges.isEmpty {
+                await Task.yield()
             }
         }
+    }
+
+    private func applyExternalChanges(
+        _ changes: [(path: String, stillExists: Bool)],
+        resolver: inout ExternalChangeResolver
+    ) {
+        // Shortest path first, which for a filesystem path means every
+        // ancestor before any of its descendants. That ordering is what lets
+        // the `isRemovedOrHasRemovedAncestor` check below discard a deleted
+        // folder's entire contents in O(1) each: the folder's own change is
+        // already applied by the time its children are looked at, and nothing
+        // under an excluded directory can change any aggregate.
+        let ordered = changes.sorted { $0.path.utf8.count < $1.path.utf8.count }
+
+        var changedNodes: [FileNode] = []
+        for change in ordered {
+            guard let node = resolver.node(atPath: change.path) else { continue }
+            if change.stillExists {
+                // Recomputes ancestor sizes back up now that this node counts
+                // again — mirrors the in-app Trash path (see
+                // `FileNode.markRemoved()`'s doc comment) so a file recreated
+                // (or a delete undone) outside the app is reflected in the
+                // Tree View/Treemap/Extension Summary without a rescan.
+                if node.setRemovedState(false) { changedNodes.append(node) }
+            } else {
+                guard !node.isRemovedOrHasRemovedAncestor else { continue }
+                if node.setRemovedState(true) { changedNodes.append(node) }
+            }
+        }
+
+        guard !changedNodes.isEmpty else { return }
+        FileNode.refinalizeAncestors(of: changedNodes)
         bumpGeneration()
     }
 
@@ -447,8 +541,101 @@ final class AppState {
 
     private func bumpGeneration(force: Bool = false) {
         let now = ContinuousClock.now
-        guard force || now - lastGenerationBump > .milliseconds(100) else { return }
+        guard force || now - lastGenerationBump > Self.generationBumpInterval else {
+            scheduleTrailingGenerationBump()
+            return
+        }
+        pendingGenerationBumpTask?.cancel()
+        pendingGenerationBumpTask = nil
         lastGenerationBump = now
         scanGeneration += 1
+    }
+
+    /// A bump the throttle swallowed isn't the same as one that didn't need
+    /// to happen. If the change that asked for it turns out to be the *last*
+    /// one — the final batch of an external delete, most obviously, since
+    /// nothing bumps again once the filesystem goes quiet — the panes would
+    /// keep showing pre-change data indefinitely. This guarantees the last
+    /// change always lands, one throttle interval later at worst.
+    private func scheduleTrailingGenerationBump() {
+        guard pendingGenerationBumpTask == nil else { return }
+        pendingGenerationBumpTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.generationBumpInterval)
+            guard let self, !Task.isCancelled else { return }
+            self.pendingGenerationBumpTask = nil
+            self.bumpGeneration(force: true)
+        }
+    }
+}
+
+/// Resolves external-change paths to `FileNode`s, reusing the work that
+/// consecutive paths in the same batch have in common.
+///
+/// `FileNode.descendant(atPath:)` walks from the root doing a linear
+/// name search at every level, which is the right shape for the one-off
+/// lookup it was written for but quadratic for what a bulk delete produces:
+/// thousands of paths that are mostly siblings, each re-walking the same
+/// prefix and re-scanning the same (possibly enormous) sibling list. Caching
+/// the resolved directory per parent path, and indexing that directory's
+/// children by name once, turns `n` siblings under one directory of `k`
+/// children from `O(n · k)` into `O(n + k)`.
+///
+/// Scoped to a single drain rather than kept for the tree's lifetime: the
+/// index is only sound while nothing is appending children, and bounding its
+/// lifetime bounds its memory without giving up the win, since the paths that
+/// share directories are precisely the ones that arrive together.
+private struct ExternalChangeResolver {
+    private let root: FileNode
+    /// `FileNode.path` rebuilds a string by walking the parent chain on every
+    /// read, so the one path compared against every single change is worth
+    /// holding onto.
+    private let rootPath: String
+    private var directories: [String: FileNode] = [:]
+    private var childrenByName: [FileNode.ID: [String: FileNode]] = [:]
+    private var indexedChildren = 0
+
+    /// Ceiling on how many children the name indexes may hold before they're
+    /// dropped and rebuilt on demand. Deleting an entire volume's worth of
+    /// files would otherwise let them grow to roughly one entry per node in
+    /// the tree — a lot of memory to hold transiently for a cache whose whole
+    /// value comes from consecutive paths sharing a directory, which the
+    /// most recently indexed ones still do after a reset.
+    private static let indexedChildrenCap = 250_000
+
+    init(root: FileNode) {
+        self.root = root
+        self.rootPath = root.path
+    }
+
+    mutating func node(atPath path: String) -> FileNode? {
+        if path == rootPath { return root }
+        guard let separator = path.lastIndex(of: "/") else { return nil }
+        let parentPath = separator == path.startIndex ? "/" : String(path[path.startIndex..<separator])
+        let name = String(path[path.index(after: separator)...])
+        guard !name.isEmpty, let parent = directory(atPath: parentPath) else { return nil }
+        return index(of: parent)[name]
+    }
+
+    private mutating func directory(atPath path: String) -> FileNode? {
+        if let cached = directories[path] { return cached }
+        guard let resolved = root.descendant(atPath: path) else { return nil }
+        directories[path] = resolved
+        return resolved
+    }
+
+    private mutating func index(of directory: FileNode) -> [String: FileNode] {
+        if let cached = childrenByName[directory.id] { return cached }
+        if indexedChildren > Self.indexedChildrenCap {
+            childrenByName.removeAll(keepingCapacity: true)
+            indexedChildren = 0
+        }
+        let children = directory.children
+        var index = [String: FileNode](minimumCapacity: children.count)
+        for child in children {
+            index[child.name] = child
+        }
+        childrenByName[directory.id] = index
+        indexedChildren += children.count
+        return index
     }
 }

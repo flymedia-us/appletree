@@ -194,4 +194,159 @@ struct FileNodeTests {
         #expect(root.fileCount == 1)
         #expect(root.folderCount == 0)
     }
+
+    @Test("child(named:) finds an immediate child and ignores deeper descendants")
+    func childByName() {
+        let root = FileNode(name: "root", isDirectory: true)
+        let sub = FileNode(name: "sub", isDirectory: true)
+        let nested = FileNode(name: "nested.txt", isDirectory: false)
+        let file = FileNode(name: "file.txt", isDirectory: false)
+        root.addChild(sub)
+        root.addChild(file)
+        sub.addChild(nested)
+
+        #expect(root.child(named: "file.txt") === file)
+        #expect(root.child(named: "sub") === sub)
+        #expect(root.child(named: "nested.txt") == nil)
+        // A file has no children lock at all — must read as "no children"
+        // rather than trapping.
+        #expect(file.child(named: "anything") == nil)
+    }
+
+    @Test("isRemovedOrHasRemovedAncestor reports a live node inside a deleted folder as gone")
+    func removedAncestorPropagatesToDescendants() {
+        let root = FileNode(name: "root", isDirectory: true)
+        let doomedDir = FileNode(name: "doomed", isDirectory: true)
+        let nested = FileNode(name: "nested.txt", isDirectory: false, allocatedSize: 700)
+        let survivor = FileNode(name: "survivor.txt", isDirectory: false, allocatedSize: 50)
+        root.addChild(doomedDir)
+        root.addChild(survivor)
+        doomedDir.addChild(nested)
+
+        doomedDir.markRemoved()
+
+        // Only the directory itself carries the flag — marking every
+        // descendant is exactly the per-node cost a bulk delete can't afford
+        // — but a descendant still has to *read* as gone, which is what the
+        // Tree View strikes rows through on.
+        #expect(!nested.isRemoved)
+        #expect(nested.isRemovedOrHasRemovedAncestor)
+        #expect(doomedDir.isRemovedOrHasRemovedAncestor)
+        #expect(!survivor.isRemovedOrHasRemovedAncestor)
+    }
+
+    @Test("a batched removal produces exactly the aggregates one-at-a-time removal would")
+    func batchedRemovalMatchesIndividualRemoval() {
+        /// Two identical trees, each `depth` levels deep with `breadth`
+        /// files per level, so the comparison covers ancestors several
+        /// levels above the changed nodes rather than just direct parents.
+        func makeTree() -> (root: FileNode, files: [FileNode]) {
+            let root = FileNode(name: "root", isDirectory: true, rootPath: "/root")
+            var files: [FileNode] = []
+            var directories = [root]
+            for level in 0..<3 {
+                var next: [FileNode] = []
+                for directory in directories {
+                    for index in 0..<4 {
+                        let file = FileNode(
+                            name: "f\(level)-\(index).bin",
+                            isDirectory: false,
+                            logicalSize: UInt64(index + 1) * 10,
+                            allocatedSize: UInt64(index + 1) * 100
+                        )
+                        directory.addChild(file)
+                        files.append(file)
+                        let sub = FileNode(name: "d\(level)-\(index)", isDirectory: true)
+                        directory.addChild(sub)
+                        next.append(sub)
+                    }
+                }
+                directories = next
+            }
+            // Finalize bottom-up so every ancestor sums final child numbers.
+            func finalize(_ node: FileNode) {
+                for child in node.children where child.isDirectory { finalize(child) }
+                node.finalizeAsDirectory()
+            }
+            finalize(root)
+            return (root, files)
+        }
+
+        let individual = makeTree()
+        let batched = makeTree()
+        // Every third file, so the changed set spans many different parents.
+        let doomedIndices = stride(from: 0, to: individual.files.count, by: 3)
+
+        for index in doomedIndices {
+            individual.files[index].markRemoved()
+        }
+
+        var changed: [FileNode] = []
+        for index in doomedIndices where batched.files[index].setRemovedState(true) {
+            changed.append(batched.files[index])
+        }
+        FileNode.refinalizeAncestors(of: changed)
+
+        #expect(batched.root.allocatedSize == individual.root.allocatedSize)
+        #expect(batched.root.logicalSize == individual.root.logicalSize)
+        #expect(batched.root.fileCount == individual.root.fileCount)
+        #expect(batched.root.folderCount == individual.root.folderCount)
+        #expect(batched.root.allocatedSize > 0)
+
+        // Every intermediate directory too, not just the root — a bottom-up
+        // single pass has to leave the middle of the tree correct as well.
+        // Keyed by path rather than compared position-by-position: equal-sized
+        // siblings (which this fixture is full of, every branch being
+        // identical) tie in `finalizeAsDirectory`'s sort, and that sort isn't
+        // stable, so their relative order legitimately differs between two
+        // runs — as it always has.
+        func directories(under node: FileNode) -> [String: FileNode] {
+            var result: [String: FileNode] = [:]
+            for child in node.children where child.isDirectory {
+                result[child.path] = child
+                result.merge(directories(under: child)) { current, _ in current }
+            }
+            return result
+        }
+        let expected = directories(under: individual.root)
+        let actual = directories(under: batched.root)
+        #expect(expected.count == actual.count)
+        for (path, expectedDirectory) in expected {
+            #expect(actual[path]?.allocatedSize == expectedDirectory.allocatedSize)
+            #expect(actual[path]?.fileCount == expectedDirectory.fileCount)
+            #expect(actual[path]?.folderCount == expectedDirectory.folderCount)
+        }
+    }
+
+    /// The regression this batching exists for. Removing `count` siblings one
+    /// at a time re-sorts and re-sums the whole sibling list `count` times —
+    /// quadratic, and at this size several minutes of blocked main thread,
+    /// which is precisely what a bulk delete outside the app used to do to
+    /// the window. Batched it's one sort and one sum, comfortably
+    /// milliseconds. The budget is deliberately enormous relative to that so
+    /// this measures the complexity class and not the machine's mood.
+    @Test("removing tens of thousands of siblings as one batch stays far off the quadratic path")
+    func bulkSiblingRemovalIsNotQuadratic() {
+        let count = 20_000
+        let root = FileNode(name: "root", isDirectory: true, rootPath: "/root")
+        var files: [FileNode] = []
+        for index in 0..<count {
+            let file = FileNode(name: "f\(index).bin", isDirectory: false, allocatedSize: UInt64(index + 1))
+            root.addChild(file)
+            files.append(file)
+        }
+        root.finalizeAsDirectory()
+
+        let started = ContinuousClock.now
+        var changed: [FileNode] = []
+        for file in files where file.setRemovedState(true) {
+            changed.append(file)
+        }
+        FileNode.refinalizeAncestors(of: changed)
+        let elapsed = ContinuousClock.now - started
+
+        #expect(root.allocatedSize == 0)
+        #expect(root.fileCount == 0)
+        #expect(elapsed < .seconds(5))
+    }
 }

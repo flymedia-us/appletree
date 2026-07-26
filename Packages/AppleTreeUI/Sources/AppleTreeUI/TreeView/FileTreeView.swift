@@ -24,13 +24,6 @@ public struct FileTreeView: NSViewRepresentable {
     /// scanning→idle transition — see `updateNSView`'s doc comment on why
     /// that moment (and only that moment) needs a full reload.
     public var isScanning: Bool
-    /// Nodes a live filesystem watch has found gone since the scan completed
-    /// — deleted, or moved out from under their scanned path, by Finder,
-    /// Terminal, or any other process outside this app. Rendered with the
-    /// same red-strikethrough treatment as an in-app Trash action (see
-    /// `Coordinator.deletedNodeIDs`), just sourced from outside instead of
-    /// from this view's own Delete action.
-    public var externallyDeletedNodeIDs: Set<FileNode.ID>
     /// Called after this view's own Delete action marks a node removed
     /// (`FileNode.markRemoved()`) and updates its own rows. The Treemap and
     /// Extension Summary panes don't observe this view's internal state —
@@ -53,7 +46,6 @@ public struct FileTreeView: NSViewRepresentable {
         selection: SelectionModel,
         treeVersion: Int,
         isScanning: Bool,
-        externallyDeletedNodeIDs: Set<FileNode.ID> = [],
         confirmBeforeDelete: Bool = true,
         colorScheme: ColorScheme = .light,
         onTreeMutated: (() -> Void)? = nil,
@@ -63,7 +55,6 @@ public struct FileTreeView: NSViewRepresentable {
         self.selection = selection
         self.treeVersion = treeVersion
         self.isScanning = isScanning
-        self.externallyDeletedNodeIDs = externallyDeletedNodeIDs
         self.confirmBeforeDelete = confirmBeforeDelete
         self.colorScheme = colorScheme
         self.onTreeMutated = onTreeMutated
@@ -187,24 +178,24 @@ public struct FileTreeView: NSViewRepresentable {
             }
         }
 
+        // Externally-deleted rows need no bookkeeping of their own here: the
+        // watch marks the node itself (`FileNode.markRemoved()`), row
+        // rendering reads that flag directly, and the same change bumps
+        // `treeVersion`, whose `reloadItem(rootNode, reloadChildren: true)`
+        // below repaints every materialized row.
+        //
+        // This used to mirror the app's whole set of externally-deleted node
+        // IDs, diff it against the previous set, and `reloadItem` each
+        // difference — with the node behind each ID found by a *full
+        // depth-first walk of the tree*. Deleting a large folder outside the
+        // app made that walk run once per deleted file, over a set growing
+        // to that same size, comparing and copying the set on every SwiftUI
+        // update in between: the single largest contributor to the app
+        // locking up for minutes afterwards.
         let isNewRoot = coordinator.rootNode !== rootNode
         if isNewRoot {
             coordinator.rootNode = rootNode
             coordinator.deletedNodeIDs.removeAll()
-            coordinator.externallyDeletedNodeIDs = []
-            coordinator.lastExternallyDeletedNodeIDs = []
-        } else if coordinator.lastExternallyDeletedNodeIDs != externallyDeletedNodeIDs {
-            // Only the rows whose deleted-status actually flipped need a
-            // reload — not a full `reloadData()`, which would also reset
-            // scroll position and any in-progress editing/selection UI.
-            let changedIDs = coordinator.lastExternallyDeletedNodeIDs.symmetricDifference(externallyDeletedNodeIDs)
-            coordinator.externallyDeletedNodeIDs = externallyDeletedNodeIDs
-            coordinator.lastExternallyDeletedNodeIDs = externallyDeletedNodeIDs
-            for id in changedIDs {
-                if let node = coordinator.findNode(withID: id, in: rootNode) {
-                    outlineView.reloadItem(node)
-                }
-            }
         }
 
         // A directory's size is only final once *its own* `finalizeAsDirectory()`
@@ -319,13 +310,6 @@ public struct FileTreeView: NSViewRepresentable {
         /// root changes (a fresh scan has nothing to mark deleted).
         var deletedNodeIDs: Set<FileNode.ID> = []
 
-        /// Mirrors `FileTreeView.externallyDeletedNodeIDs` — nodes a live
-        /// filesystem watch found gone, from outside this app. `updateNSView`
-        /// keeps this in sync and reloads exactly the rows that changed;
-        /// `lastExternallyDeletedNodeIDs` is what that diff is against.
-        var externallyDeletedNodeIDs: Set<FileNode.ID> = []
-        var lastExternallyDeletedNodeIDs: Set<FileNode.ID> = []
-
         init(selection: SelectionModel) {
             self.selection = selection
         }
@@ -363,7 +347,13 @@ public struct FileTreeView: NSViewRepresentable {
 
         public func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
             guard let node = item as? FileNode, let columnID = tableColumn?.identifier else { return nil }
-            let isDeleted = deletedNodeIDs.contains(node.id) || externallyDeletedNodeIDs.contains(node.id)
+            // `isRemovedOrHasRemovedAncestor` covers both sources of removal
+            // — this view's own Trash action and the external-change watch,
+            // which both set the model flag — and, unlike a flat set of node
+            // IDs, correctly strikes through the contents of a deleted folder
+            // the user expands into. Only the handful of rows actually being
+            // rendered pay for its walk up the parent chain.
+            let isDeleted = deletedNodeIDs.contains(node.id) || node.isRemovedOrHasRemovedAncestor
 
             switch columnID {
             case .folderColumn:
@@ -706,8 +696,8 @@ public struct FileTreeView: NSViewRepresentable {
         func syncSelectionFromModel() {
             guard let outlineView else { return }
             // The model stores the resolved node directly, so the tree can
-            // pick it up by reference — no `findNode` full-tree walk needed
-            // on every treemap tap (the nodes are shared across panes).
+            // pick it up by reference — no by-ID full-tree walk needed on
+            // every treemap tap (the nodes are shared across panes).
             let target = selection.selectedNode
             let currentRow = outlineView.selectedRow
             let currentSelection = currentRow >= 0 ? outlineView.item(atRow: currentRow) as? FileNode : nil
@@ -731,15 +721,6 @@ public struct FileTreeView: NSViewRepresentable {
             guard row >= 0 else { return }
             outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             outlineView.scrollRowToVisible(row)
-        }
-
-        fileprivate func findNode(withID id: FileNode.ID, in node: FileNode?) -> FileNode? {
-            guard let node else { return nil }
-            if node.id == id { return node }
-            for child in node.children {
-                if let found = findNode(withID: id, in: child) { return found }
-            }
-            return nil
         }
     }
 }
