@@ -129,6 +129,75 @@ struct SubtreeResyncTests {
         #expect(fixture.node.allocatedSize == 200)
     }
 
+    @Test("a one-level survey catches siblings whose events went missing")
+    func shallowSurveyCatchesSiblings() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+        // The routine post-burst case: the watch reported *some* of what
+        // happened in `docs`, and the reconcile checks that directory one
+        // level deep to find what it missed.
+        try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("docs/a.txt"))
+        let docs = try #require(fixture.node.child(named: "docs"))
+
+        let decisions = SubtreeResync.survey(docs, maxDepth: 1)
+        #expect(decisions.count == 1)
+        #expect(decisions.first?.node.name == "a.txt")
+
+        SubtreeResync.apply(decisions)
+        #expect(fixture.node.allocatedSize == 200)
+    }
+
+    @Test("a one-level survey stops at the level below, and doesn't walk the whole subtree")
+    func shallowSurveyDoesNotDescend() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+        // Two levels down from the surveyed node — out of scope by design.
+        // This bound is what stops a stray write next to the scan root from
+        // costing a full-tree `lstat` sweep every time it happens.
+        try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("docs/nested/deep.txt"))
+
+        #expect(SubtreeResync.survey(fixture.node, maxDepth: 1).isEmpty)
+        // ...and an unbounded survey of the same tree does find it, so the
+        // difference really is the depth bound and not a broken fixture.
+        #expect(SubtreeResync.survey(fixture.node).count == 1)
+    }
+
+    @Test("a one-level survey still catches a directory that vanished wholesale")
+    func shallowSurveyCatchesMissingDirectory() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+        // The other half of the observed failure: every file event inside
+        // `docs` arrives but the directory's own never does. Checking the
+        // parent one level deep sees `docs` itself is gone, which accounts
+        // for its entire subtree in one decision.
+        try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("docs"))
+
+        let decisions = SubtreeResync.survey(fixture.node, maxDepth: 1)
+        #expect(decisions.count == 1)
+        #expect(decisions.first?.node.name == "docs")
+
+        SubtreeResync.apply(decisions)
+        #expect(fixture.node.allocatedSize == 100)
+        #expect(fixture.node.fileCount == 1)
+    }
+
+    @Test("a zero-depth survey checks only the node it was given")
+    func zeroDepthChecksOnlyTheNode() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+        try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("keep.txt"))
+        #expect(SubtreeResync.survey(fixture.node, maxDepth: 0).isEmpty)
+
+        try FileManager.default.removeItem(at: fixture.root)
+        let decisions = SubtreeResync.survey(fixture.node, maxDepth: 0)
+        #expect(decisions.count == 1)
+        #expect(decisions.first?.node === fixture.node)
+    }
+
     @Test("surveys a subtree in isolation without touching the rest of the tree")
     func surveysOnlyTheGivenSubtree() throws {
         let fixture = try makeFixture()

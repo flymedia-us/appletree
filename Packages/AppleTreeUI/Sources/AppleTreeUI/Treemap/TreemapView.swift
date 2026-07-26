@@ -22,9 +22,17 @@ public struct TreemapView: View {
     public var onRelayoutFinished: ((Int) -> Void)?
 
     @State private var layout: [TreemapNode] = []
+    /// Bumped every time `layout` is replaced. `TreemapCanvas` compares on
+    /// this instead of the array itself — comparing a hundred thousand
+    /// `TreemapNode`s to decide whether to skip a redraw would cost more than
+    /// the redraw it's trying to avoid.
+    @State private var layoutRevision = 0
     @State private var layoutSize: CGSize = .zero
     @State private var layoutedRootID: FileNode.ID?
     @State private var layoutedVersion: Int = -1
+    /// The currently-selected box's rect, kept in step with `layout` and
+    /// `selection.selectedNodeID` — see the `onChange` that maintains it.
+    @State private var selectedRect: CGRect?
     /// The last-hit box. Doubles as both the hover cache (a tick still
     /// "inside" it can skip `TreemapHitTester.hitTest`'s O(n) scan entirely)
     /// and the tooltip's anchor — see `body`'s doc comments for both.
@@ -70,13 +78,35 @@ public struct TreemapView: View {
 
     public var body: some View {
         GeometryReader { proxy in
-            Canvas { context, size in
-                draw(in: &context)
+            // Two layers, deliberately. The base canvas paints every box and
+            // is by far the most expensive thing this view does — a real scan
+            // produces well over a hundred thousand of them. The highlight
+            // layer paints at most two rectangles.
+            //
+            // They used to be one canvas, which meant every hover tick
+            // repainted all hundred-thousand-plus boxes to move a one-pixel
+            // outline: the direct cause of hover feeling sluggish on a large
+            // scan. Splitting them, and making the base layer `Equatable` on
+            // a revision counter that only a real relayout bumps, means a
+            // hover now redraws two strokes and nothing else.
+            ZStack {
+                TreemapCanvas(layout: layout, revision: layoutRevision)
+                    .equatable()
+                TreemapHighlightLayer(
+                    hoveredRect: hoveredBox?.rect,
+                    selectedRect: selectedRect
+                )
             }
             .onAppear { relayout(size: proxy.size) }
             .onChange(of: proxy.size) { _, newSize in relayout(size: newSize) }
             .onChange(of: treeVersion) { _, _ in relayout(size: proxy.size) }
             .onChange(of: rootNode?.id) { _, _ in relayout(size: proxy.size) }
+            // The selected box's rect is cached rather than found while
+            // drawing (as it was when the outline lived in the base canvas):
+            // the highlight layer needs it every hover tick, and scanning the
+            // whole layout that often is exactly the per-hover cost this
+            // split exists to remove. Selection changes far more rarely.
+            .onChange(of: selection.selectedNodeID) { _, _ in updateSelectedRect() }
             .background(LiveResizeMonitor(onLiveResizeChange: { dragging in
                 isLiveResizing = dragging
                 // The drag's own in-progress rescales never advance
@@ -135,11 +165,11 @@ public struct TreemapView: View {
     /// Dark neutral background the colored file boxes and folder label bands
     /// sit on top of — matches WizTree's treemap styling (#3A3939) by design,
     /// independent of the rest of the app's light/dark appearance.
-    private static let backgroundColor = Color(red: 0x3A / 255.0, green: 0x39 / 255.0, blue: 0x39 / 255.0)
-    private static let folderLabelBackground = Color(red: 0x50 / 255.0, green: 0x4F / 255.0, blue: 0x4F / 255.0)
-    private static let folderStroke = Color.white.opacity(0.18)
-    private static let selectedOutline = Color.white
-    private static let hoveredOutline = Color.white.opacity(0.5)
+    static let backgroundColor = Color(red: 0x3A / 255.0, green: 0x39 / 255.0, blue: 0x39 / 255.0)
+    static let folderLabelBackground = Color(red: 0x50 / 255.0, green: 0x4F / 255.0, blue: 0x4F / 255.0)
+    static let folderStroke = Color.white.opacity(0.18)
+    static let selectedOutline = Color.white
+    static let hoveredOutline = Color.white.opacity(0.5)
 
     /// Pins the tooltip near the hovered box's top-left corner rather than
     /// the live cursor position — deliberately, not just for simplicity: it
@@ -165,7 +195,7 @@ public struct TreemapView: View {
     private func relayout(size: CGSize, force: Bool = false) {
         guard let rootNode, size.width > 0, size.height > 0 else {
             relayoutTask?.cancel()
-            layout = []
+            setLayout([])
             layoutSize = size
             return
         }
@@ -247,7 +277,7 @@ public struct TreemapView: View {
         }
         let scaleX = size.width / layoutSize.width
         let scaleY = size.height / layoutSize.height
-        layout = layout.map { node in
+        setLayout(layout.map { node in
             TreemapNode(
                 source: node.source,
                 rect: node.rect.scaled(x: scaleX, y: scaleY),
@@ -255,7 +285,7 @@ public struct TreemapView: View {
                 depth: node.depth,
                 hasVisibleChildren: node.hasVisibleChildren
             )
-        }
+        })
         layoutSize = size
         // Stale the instant the geometry underneath it moved — see
         // `runRelayout`'s identical rationale for clearing this after a real
@@ -271,7 +301,7 @@ public struct TreemapView: View {
                     TreemapLayout.layout(node: rootNode, in: CGRect(origin: .zero, size: size))
                 }.value
                 if !Task.isCancelled {
-                    self.layout = computed
+                    self.setLayout(computed)
                     // The cached hover box may no longer correspond to
                     // anything at its old screen position under the new
                     // layout — drop it so the next hover tick (even a tiny
@@ -308,75 +338,140 @@ public struct TreemapView: View {
         }
     }
 
-    private func draw(in context: inout GraphicsContext) {
-        let selectedID = selection.selectedNodeID
-        let hoveredID = selection.hoveredNodeID
-        // A selected/hovered folder's box is behind its own children's boxes
-        // and label bands in draw order (they're nested inside it), so its
-        // outline has to be drawn in a final pass over everything else —
-        // drawn inline, a child painted right up to the parent's edge would
-        // paint over the outline there.
-        var hoveredRect: CGRect?
-        var selectedRect: CGRect?
+    /// Single point where `layout` is replaced, so the revision counter the
+    /// base canvas keys off — and the cached selection rect that depends on
+    /// the geometry — can never be left behind by a caller that forgot.
+    private func setLayout(_ newLayout: [TreemapNode]) {
+        layout = newLayout
+        layoutRevision &+= 1
+        updateSelectedRect()
+    }
 
-        for node in layout {
-            let rect = node.rect
-            guard rect.width >= 1, rect.height >= 1 else { continue }
+    private func updateSelectedRect() {
+        guard let selectedID = selection.selectedNodeID else {
+            selectedRect = nil
+            return
+        }
+        selectedRect = layout.first { $0.source.id == selectedID }?.rect
+    }
+}
 
-            if !node.source.isDirectory {
-                let (top, bottom) = ExtensionColor.gradient(forFileName: node.source.name)
-                context.fill(
-                    Path(rect),
-                    with: .linearGradient(
-                        Gradient(colors: [top, bottom]),
-                        startPoint: CGPoint(x: rect.midX, y: rect.minY),
-                        endPoint: CGPoint(x: rect.midX, y: rect.maxY)
+/// Paints every box in the treemap. Split out from `TreemapView` and made
+/// `Equatable` so SwiftUI can skip it entirely when only the hover or
+/// selection outline moved — see `TreemapView.body`.
+private struct TreemapCanvas: View, Equatable {
+    // `nonisolated`, because conforming to `View` infers `@MainActor` on the
+    // type while `Equatable` is not actor-isolated — SwiftUI is free to call
+    // `==` from wherever it does its diffing. Sound here rather than merely
+    // silenced: both are immutable `let`s of `Sendable` type.
+    nonisolated let layout: [TreemapNode]
+    nonisolated let revision: Int
+
+    /// Compares the revision counter, never the array. Two values with the
+    /// same revision are the same layout by construction (`setLayout` is the
+    /// only thing that assigns either), and comparing a hundred thousand
+    /// boxes would defeat the purpose of skipping the redraw.
+    nonisolated static func == (lhs: TreemapCanvas, rhs: TreemapCanvas) -> Bool {
+        lhs.revision == rhs.revision
+    }
+
+    /// Below this height a vertical gradient across the box is not
+    /// distinguishable from its own average color, so the boxes that make up
+    /// the overwhelming majority of a real treemap (a 200k-file scan lays out
+    /// well over a hundred thousand boxes on a 1600×900 canvas, most of them
+    /// a couple of pixels tall) get a flat fill instead. Shading each of
+    /// those individually was pure cost for no visible difference.
+    private static let gradientMinHeight: CGFloat = 8
+
+    /// Below this, the hairline border between boxes stops separating
+    /// anything: at two or three pixels a 0.5pt stroke on all four sides is
+    /// most of the box, so the grid reads as mud rather than structure.
+    private static let strokeMinSize: CGFloat = 4
+
+    var body: some View {
+        Canvas { context, _ in
+            for node in layout {
+                let rect = node.rect
+                guard rect.width >= 1, rect.height >= 1 else { continue }
+
+                if !node.source.isDirectory {
+                    let (top, bottom) = ExtensionColor.gradient(forFileName: node.source.name)
+                    if rect.height >= Self.gradientMinHeight {
+                        context.fill(
+                            Path(rect),
+                            with: .linearGradient(
+                                Gradient(colors: [top, bottom]),
+                                startPoint: CGPoint(x: rect.midX, y: rect.minY),
+                                endPoint: CGPoint(x: rect.midX, y: rect.maxY)
+                            )
+                        )
+                    } else {
+                        context.fill(Path(rect), with: .color(top))
+                    }
+                } else if node.source.displaySize > 0, !node.hasVisibleChildren {
+                    // This directory has real content, but every child was
+                    // individually too small to render on its own (a folder of
+                    // many tiny files at this canvas size) — a flat neutral
+                    // tint distinguishes "content too fine-grained to show
+                    // individually" from true empty space, instead of leaving
+                    // an unexplained blank hole.
+                    context.fill(Path(rect), with: .color(.white.opacity(0.06)))
+                }
+
+                if rect.width >= Self.strokeMinSize, rect.height >= Self.strokeMinSize {
+                    context.stroke(Path(rect), with: .color(TreemapView.folderStroke), lineWidth: 0.5)
+                }
+
+                // Only folders get a name label — labeling every individual
+                // file box would be illegible noise at the box counts a real
+                // directory tree produces.
+                if node.source.isDirectory, let labelRect = node.labelRect {
+                    context.fill(Path(labelRect), with: .color(TreemapView.folderLabelBackground))
+
+                    let label = "\(node.source.name)  (\(SizeFormatting.string(for: node.source.displaySize)))"
+                    let text = Text(label)
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.92))
+                    context.draw(
+                        text,
+                        in: CGRect(x: labelRect.minX + 4, y: labelRect.minY, width: max(0, labelRect.width - 6), height: labelRect.height)
                     )
-                )
-            } else if node.source.displaySize > 0, !node.hasVisibleChildren {
-                // This directory has real content, but every child was
-                // individually too small to render on its own (a folder of
-                // many tiny files at this canvas size) — a flat neutral
-                // tint distinguishes "content too fine-grained to show
-                // individually" from true empty space, instead of leaving
-                // an unexplained blank hole.
-                context.fill(Path(rect), with: .color(.white.opacity(0.06)))
+                }
             }
+        }
+    }
+}
 
-            context.stroke(Path(rect), with: .color(Self.folderStroke), lineWidth: 0.5)
+/// The hover and selection outlines, on their own layer above the boxes.
+///
+/// Being a separate layer is also what makes the outlines correct, not just
+/// cheap: a selected or hovered *folder*'s box sits behind its own children's
+/// boxes and label bands, so an outline drawn inline with the boxes gets
+/// painted over by any child that reaches the parent's edge.
+private struct TreemapHighlightLayer: View {
+    let hoveredRect: CGRect?
+    let selectedRect: CGRect?
 
-            if node.source.id == hoveredID {
-                hoveredRect = rect
-            }
-            if node.source.id == selectedID {
-                selectedRect = rect
-            }
-
-            // Only folders get a name label — labeling every individual file
-            // box would be illegible noise at the box counts a real
-            // directory tree produces.
-            if node.source.isDirectory, let labelRect = node.labelRect {
-                context.fill(Path(labelRect), with: .color(Self.folderLabelBackground))
-
-                let label = "\(node.source.name)  (\(SizeFormatting.string(for: node.source.displaySize)))"
-                let text = Text(label)
-                    .font(.system(size: 10))
-                    .foregroundColor(.white.opacity(0.92))
-                context.draw(
-                    text,
-                    in: CGRect(x: labelRect.minX + 4, y: labelRect.minY, width: max(0, labelRect.width - 6), height: labelRect.height)
+    var body: some View {
+        Canvas { context, _ in
+            // Hover first and subtler; selection last and on top, so a box
+            // that is both still reads as selected.
+            if let hoveredRect {
+                context.stroke(
+                    Path(hoveredRect.insetBy(dx: 1, dy: 1)),
+                    with: .color(TreemapView.hoveredOutline),
+                    lineWidth: 1.5
                 )
             }
+            if let selectedRect {
+                context.stroke(
+                    Path(selectedRect.insetBy(dx: 1, dy: 1)),
+                    with: .color(TreemapView.selectedOutline),
+                    lineWidth: 2
+                )
+            }
         }
-
-        // Hover drawn first, subtler; selection drawn last/on top so a
-        // simultaneously selected+hovered folder still reads as selected.
-        if let hoveredRect {
-            context.stroke(Path(hoveredRect.insetBy(dx: 1, dy: 1)), with: .color(Self.hoveredOutline), lineWidth: 1.5)
-        }
-        if let selectedRect {
-            context.stroke(Path(selectedRect.insetBy(dx: 1, dy: 1)), with: .color(Self.selectedOutline), lineWidth: 2)
-        }
+        .allowsHitTesting(false)
     }
 }
 

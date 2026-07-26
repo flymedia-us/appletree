@@ -134,7 +134,14 @@ final class AppState {
 
     /// Directories to re-check against the filesystem once the current burst
     /// of external changes goes quiet — see `resyncTouchedDirectories`.
+    /// Checked one level deep: these are picked by where the watch was
+    /// active, not by any claim that the subtree below is wrong.
     private var directoriesAwaitingResync: [FileNode.ID: FileNode] = [:]
+
+    /// Directories whose *entire* subtree is in doubt because FSEvents said
+    /// so — see `noteDirectoryNeedsDeepResync`. Kept apart from the routine
+    /// set precisely so the expensive walk stays rare.
+    private var directoriesAwaitingDeepResync: [FileNode.ID: FileNode] = [:]
 
     /// How long to let external changes accumulate before applying them. A
     /// bulk delete arrives as a rapid run of watcher batches, and each one
@@ -306,6 +313,7 @@ final class AppState {
         pendingExternalChanges = [:]
         pendingSubtreeRescanPaths = []
         directoriesAwaitingResync = [:]
+        directoriesAwaitingDeepResync = [:]
     }
 
     /// Merges a watcher batch into `pendingExternalChanges` and makes sure a
@@ -329,7 +337,9 @@ final class AppState {
 
     private func scheduleExternalChangeDrain() {
         guard externalChangeDrainTask == nil,
-              !pendingExternalChanges.isEmpty || !directoriesAwaitingResync.isEmpty else { return }
+              !pendingExternalChanges.isEmpty
+                || !directoriesAwaitingResync.isEmpty
+                || !directoriesAwaitingDeepResync.isEmpty else { return }
         externalChangeDrainTask = Task { [weak self] in
             try? await Task.sleep(for: Self.externalChangeCoalescingWindow)
             guard let self, !Task.isCancelled else { return }
@@ -371,20 +381,36 @@ final class AppState {
     /// subtree that's still changing, and the syscalls would compete with the
     /// deletion itself.
     private func resyncTouchedDirectories() async {
-        guard !directoriesAwaitingResync.isEmpty, rootNode != nil else { return }
+        guard !directoriesAwaitingResync.isEmpty || !directoriesAwaitingDeepResync.isEmpty,
+              rootNode != nil else { return }
         try? await Task.sleep(for: Self.externalChangeQuietPeriod)
         // More events arrived — this burst isn't over. Leave the directories
         // queued; the drain that handles those events reconciles afterwards.
         guard pendingExternalChanges.isEmpty, !Task.isCancelled else { return }
 
-        let directories = Array(directoriesAwaitingResync.values)
+        let shallow = Array(directoriesAwaitingResync.values)
+        let deep = Array(directoriesAwaitingDeepResync.values)
         directoriesAwaitingResync = [:]
+        directoriesAwaitingDeepResync = [:]
 
-        // Off the main actor: a wide subtree is thousands of `lstat` calls.
-        // Only the disagreements come back, so the overwhelmingly common
-        // "nothing drifted" outcome returns an empty array.
+        // Off the main actor: even a bounded survey is thousands of `lstat`
+        // calls on a wide directory. Only disagreements come back, so the
+        // overwhelmingly common "nothing drifted" outcome returns an empty
+        // array.
+        //
+        // The routine pass is deliberately one level deep. These directories
+        // were chosen by where the watch happened to be active, and one of
+        // them can easily be the scan root — surveying its whole subtree
+        // would turn a single stray file write into a full-tree `lstat`
+        // sweep, over and over, for as long as the window stays open. One
+        // level is what actually catches the failure mode: events go missing
+        // among the siblings of paths that *were* reported, and a directory
+        // that vanished wholesale is caught by checking that directory
+        // itself. The unbounded walk is reserved for paths FSEvents
+        // explicitly disclaimed.
         let decisions = await Task.detached(priority: .utility) {
-            directories.flatMap { SubtreeResync.survey($0) }
+            shallow.flatMap { SubtreeResync.survey($0, maxDepth: 1) }
+                + deep.flatMap { SubtreeResync.survey($0) }
         }.value
 
         guard !Task.isCancelled, !decisions.isEmpty else { return }
@@ -393,18 +419,30 @@ final class AppState {
         }
     }
 
-    /// Queues `directory` for the post-burst resync pass, collapsing to the
-    /// scan root once too many distinct directories are involved. A single
-    /// survey of the root reaches everything those entries would have (it
-    /// stops at each removed directory, so it stays cheap), which is a better
-    /// trade than letting this grow with the size of the delete.
+    /// Queues `directory` for the routine one-level-deep pass. Past the cap,
+    /// collapses to a single *deep* survey of the scan root: at that point so
+    /// many directories are involved that one full walk is both simpler and
+    /// no more expensive than the list it replaces — and it stops at every
+    /// removed directory, which is what a delete that large mostly consists
+    /// of.
     private func noteDirectoryNeedsResync(_ directory: FileNode) {
         guard let rootNode else { return }
         if directoriesAwaitingResync.count >= Self.resyncDirectoryCap {
-            directoriesAwaitingResync = [rootNode.id: rootNode]
+            directoriesAwaitingResync = [:]
+            directoriesAwaitingDeepResync = [rootNode.id: rootNode]
             return
         }
+        // Already covered by a full walk of the same subtree.
+        guard directoriesAwaitingDeepResync[directory.id] == nil else { return }
         directoriesAwaitingResync[directory.id] = directory
+    }
+
+    /// Queues `directory` for an unbounded survey — only for paths FSEvents
+    /// flagged as ones it couldn't describe (`MustScanSubDirs`,
+    /// `RootChanged`), where the whole subtree really is in doubt.
+    private func noteDirectoryNeedsDeepResync(_ directory: FileNode) {
+        directoriesAwaitingResync[directory.id] = nil
+        directoriesAwaitingDeepResync[directory.id] = directory
     }
 
     /// Applies pending changes in bounded chunks, yielding between them.
@@ -453,7 +491,7 @@ final class AppState {
             // path itself, which for `MustScanSubDirs` is the directory whose
             // contents it couldn't describe.
             for path in pendingSubtreeRescanPaths {
-                if let node = applier.resolve(path) { noteDirectoryNeedsResync(node) }
+                if let node = applier.resolve(path) { noteDirectoryNeedsDeepResync(node) }
             }
             pendingSubtreeRescanPaths.removeAll(keepingCapacity: true)
 

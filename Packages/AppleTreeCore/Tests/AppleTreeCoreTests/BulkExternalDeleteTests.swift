@@ -77,13 +77,20 @@ struct BulkExternalDeleteTests {
         }
         defer { watchdog.cancel() }
 
+        // Mirrors what `AppState` queues for the post-burst reconcile: the
+        // parent of every node that actually changed.
+        var touchedDirectories: [FileNode.ID: FileNode] = [:]
+
         for await changes in stream {
             let mapped = changes.map {
                 ExternalChangeApplier.Change(path: $0.path, stillExists: $0.stillExists)
             }
             let started = ContinuousClock.now
-            applier.apply(mapped)
+            let changed = applier.apply(mapped)
             timeInsideApply += ContinuousClock.now - started
+            for node in changed {
+                if let parent = node.parent { touchedDirectories[parent.id] = parent }
+            }
             batches += 1
             // Everything the delete can possibly account for has landed —
             // no reason to sit out the rest of the watchdog.
@@ -103,10 +110,13 @@ struct BulkExternalDeleteTests {
         #expect(rootNode.displaySize < sizeAfterScan, "the events that did arrive should have been applied")
 
         // What the app actually promises: once the burst goes quiet it checks
-        // the touched directories against disk. This is the same call
-        // `AppState.resyncTouchedDirectories` makes, and after it the tree
-        // must be exactly right no matter which events FSEvents chose to skip.
-        let decisions = SubtreeResync.survey(rootNode)
+        // the directories the burst touched against disk, one level deep.
+        // Same inputs and same call `AppState.resyncTouchedDirectories`
+        // makes — including the depth bound, so this test would fail if that
+        // bound were ever too tight to converge. After it the tree must be
+        // exactly right no matter which events FSEvents chose to skip.
+        #expect(!touchedDirectories.isEmpty)
+        let decisions = touchedDirectories.values.flatMap { SubtreeResync.survey($0, maxDepth: 1) }
         SubtreeResync.apply(decisions)
 
         #expect(rootNode.child(named: "bulk")?.isRemoved == true)

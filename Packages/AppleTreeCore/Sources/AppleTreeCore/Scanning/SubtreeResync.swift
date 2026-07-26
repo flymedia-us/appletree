@@ -32,14 +32,27 @@ public enum SubtreeResync {
     /// that disagree with disk — so the common "nothing actually drifted"
     /// outcome allocates nothing and the caller can skip re-rendering.
     ///
+    /// `maxDepth` bounds how far below `subtree` to look: `0` checks only the
+    /// node itself, `1` it and its immediate children, `nil` the whole
+    /// subtree. Depth matters enormously, because the routine post-burst
+    /// reconcile runs against directories picked by where the watch was
+    /// active — and a directory near the scan root has the entire scan
+    /// beneath it. An unbounded survey there is hundreds of thousands of
+    /// syscalls triggered by one stray file write, repeatedly, for as long as
+    /// the app is open. Depth 1 is what that case actually needs: events go
+    /// missing among the *siblings* of paths that were reported, and a
+    /// directory that vanished is caught by checking the directory itself.
+    /// Unbounded is for when FSEvents explicitly says it lost track of a
+    /// whole subtree (`MustScanSubDirs`).
+    ///
     /// Pure reads plus syscalls, no mutation: safe to run off the main actor,
     /// which is the point — a wide subtree is thousands of `lstat` calls and
     /// has no business happening on the main thread. The tree may of course
     /// move on while this runs; that's fine, since applying a `Decision` is
     /// idempotent and the next resync sees whatever changed after it.
-    public static func survey(_ subtree: FileNode) -> [Decision] {
+    public static func survey(_ subtree: FileNode, maxDepth: Int? = nil) -> [Decision] {
         var decisions: [Decision] = []
-        walk(subtree, path: subtree.path, into: &decisions)
+        walk(subtree, path: subtree.path, remainingDepth: maxDepth, into: &decisions)
         return decisions
     }
 
@@ -58,7 +71,12 @@ public enum SubtreeResync {
         return changed
     }
 
-    private static func walk(_ node: FileNode, path: String, into decisions: inout [Decision]) {
+    private static func walk(
+        _ node: FileNode,
+        path: String,
+        remainingDepth: Int?,
+        into decisions: inout [Decision]
+    ) {
         let exists = FileSystemProbe.exists(atPath: path)
         if node.isRemoved == exists {
             decisions.append(Decision(node: node, exists: exists))
@@ -70,6 +88,7 @@ public enum SubtreeResync {
         // makes reconciling after an `rm -rf` essentially free — the deleted
         // folder costs one `lstat`, not one per file that used to be in it.
         guard exists, node.isDirectory else { return }
+        if let remainingDepth, remainingDepth <= 0 { return }
 
         // Built by appending to the parent's path rather than asking each
         // node for its own: `FileNode.path` walks the parent chain and
@@ -77,7 +96,7 @@ public enum SubtreeResync {
         // quadratic in depth for no reason.
         let prefix = path.hasSuffix("/") ? path : path + "/"
         for child in node.children {
-            walk(child, path: prefix + child.name, into: &decisions)
+            walk(child, path: prefix + child.name, remainingDepth: remainingDepth.map { $0 - 1 }, into: &decisions)
         }
     }
 }

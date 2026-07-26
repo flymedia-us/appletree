@@ -62,8 +62,31 @@ public enum TreemapLayout {
             : rect
 
         let countBeforeChildren = result.count
+        // Snapshot every child's `displaySize` exactly once, here, and thread
+        // the snapshot down the whole binary-split recursion below.
+        //
+        // `splitPoint` used to re-read `FileNode.displaySize` live in its own
+        // loop, and `group1Size` read it live again, independently, moments
+        // later — two reads of state that keeps changing while a scan is
+        // still filling in this subtree, or while `markRemoved()`/
+        // `unmarkRemoved()` (external-change watch, in-app delete) fires.
+        // When those two live reads disagreed, `splitPoint`'s own bookkeeping
+        // invariant (`cumulative` never exceeds `half` before its own bounds
+        // check catches it) broke, underflowing its checked `UInt64`
+        // subtraction and trapping the process outright — confirmed as a
+        // real crash on a live scan, deeper in the recursion than the
+        // `totalSize - group1Size` underflow already guarded below.
+        //
+        // Taking the snapshot once *per directory* rather than once per
+        // recursion level (as it was) is both faster and strictly more
+        // consistent: `displaySize` is a lock acquisition per child, and
+        // re-mapping at every level of a binary split costs `n log n` of them
+        // per directory instead of `n`. Every level now works off numbers
+        // that agree with each other by construction.
+        let sizes = visibleChildren.map(\.displaySize)
         layoutChildren(
             visibleChildren[...],
+            sizes: sizes[...],
             totalSize: node.displaySize,
             in: contentRect,
             depth: depth + 1,
@@ -77,8 +100,12 @@ public enum TreemapLayout {
     /// `FileNode.finalizeAsDirectory`, relied on rather than re-sorted here —
     /// re-sorting on every layout pass, e.g. every zoom/pan frame, would be
     /// wasted work for data that doesn't change between scans).
+    ///
+    /// `sizes` is the caller's `displaySize` snapshot, index-aligned with
+    /// `children`; both are sliced together as the recursion splits.
     private static func layoutChildren(
         _ children: ArraySlice<FileNode>,
+        sizes: ArraySlice<UInt64>,
         totalSize: UInt64,
         in rect: CGRect,
         depth: Int,
@@ -87,33 +114,32 @@ public enum TreemapLayout {
     ) {
         guard !children.isEmpty, totalSize > 0 else { return }
 
+        // Nothing inside a rect this small can ever be drawn, so there is no
+        // point subdividing it. Splitting only ever shrinks a rect — both
+        // halves inherit one dimension and divide the other — so once either
+        // dimension is below `minBoxSize`, every box in this entire subtree
+        // is guaranteed to fail `layoutNode`'s identical check on arrival.
+        //
+        // Without this the split recursion ran to completion regardless,
+        // descending through every child of every directory just to discard
+        // each one at the leaf: on a 200k-file tree that was most of the
+        // layout's total cost, and it also emitted a large tail of
+        // 2-pixel boxes for the renderer to draw for no visible benefit.
+        guard rect.width >= options.minBoxSize, rect.height >= options.minBoxSize else { return }
+
         if children.count == 1 {
             layoutNode(children[children.startIndex], in: rect, depth: depth, options: options, into: &result)
             return
         }
 
-        // Snapshot every child's `displaySize` exactly once, up front.
-        // `splitPoint` used to re-read `FileNode.displaySize` live in its own
-        // loop, and `group1Size` below read it live again, independently,
-        // moments later — two reads of state that keeps changing while a
-        // scan is still filling in this subtree, or while `markRemoved()`/
-        // `unmarkRemoved()` (external-change watch, in-app delete) fires.
-        // When those two live reads disagreed, `splitPoint`'s own bookkeeping
-        // invariant (`cumulative` never exceeds `half` before its own bounds
-        // check catches it) broke, underflowing its checked `UInt64`
-        // subtraction and trapping the process outright — confirmed as a
-        // real crash on a live scan, deeper in the recursion than the
-        // `totalSize - group1Size` underflow already guarded below.
-        // Snapshotting once removes the discrepancy at its root: every
-        // computation from here on works off the exact same numbers, so no
-        // amount of concurrent mutation elsewhere in the tree can desync
-        // `splitPoint`'s two hands against each other mid-loop.
-        let sizes = children.map(\.displaySize)
         let splitOffset = splitPoint(sizes: sizes)
         let splitIndex = children.index(children.startIndex, offsetBy: splitOffset)
+        let sizesSplitIndex = sizes.index(sizes.startIndex, offsetBy: splitOffset)
         let group1 = children[children.startIndex..<splitIndex]
         let group2 = children[splitIndex...]
-        let group1Size = sizes[..<splitOffset].reduce(UInt64(0), +)
+        let sizes1 = sizes[sizes.startIndex..<sizesSplitIndex]
+        let sizes2 = sizes[sizesSplitIndex...]
+        let group1Size = sizes1.reduce(UInt64(0), +)
         // `totalSize` was read once by the caller (ultimately from a
         // parent's `displaySize`, at the top of the recursion) — a moment
         // before this call's own `sizes` snapshot above, so it can still be
@@ -138,8 +164,8 @@ public enum TreemapLayout {
             rect2 = CGRect(x: rect.minX, y: splitY, width: rect.width, height: rect.maxY - splitY)
         }
 
-        layoutChildren(group1, totalSize: group1Size, in: rect1, depth: depth, options: options, into: &result)
-        layoutChildren(group2, totalSize: group2Size, in: rect2, depth: depth, options: options, into: &result)
+        layoutChildren(group1, sizes: sizes1, totalSize: group1Size, in: rect1, depth: depth, options: options, into: &result)
+        layoutChildren(group2, sizes: sizes2, totalSize: group2Size, in: rect2, depth: depth, options: options, into: &result)
     }
 
     /// The 0-based offset into `sizes` where cumulative size first reaches
@@ -152,16 +178,19 @@ public enum TreemapLayout {
     /// snapshot for this function's own bounds check to be trustworthy.
     /// Always returns an offset strictly between `0` and `sizes.count` so
     /// both groups are non-empty.
-    private static func splitPoint(sizes: [UInt64]) -> Int {
+    private static func splitPoint(sizes: ArraySlice<UInt64>) -> Int {
         let half = sizes.reduce(UInt64(0), +) / 2
         var cumulative: UInt64 = 0
 
-        for index in sizes.indices {
-            let next = cumulative + sizes[index]
+        // `enumerated()` rather than `indices`: `sizes` is a slice whose
+        // indices are offsets into the parent array, while every caller wants
+        // a 0-based offset within the slice.
+        for (offset, size) in sizes.enumerated() {
+            let next = cumulative + size
             if next >= half {
                 let distIncluding = next - half
                 let distExcluding = half - cumulative
-                let boundary = distIncluding < distExcluding ? index + 1 : index
+                let boundary = distIncluding < distExcluding ? offset + 1 : offset
                 return clampSplitOffset(boundary, count: sizes.count)
             }
             cumulative = next
