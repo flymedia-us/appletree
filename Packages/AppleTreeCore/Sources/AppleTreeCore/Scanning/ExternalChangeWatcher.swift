@@ -12,18 +12,41 @@ import os
 /// straight to a `FileNode` via `descendant(atPath:)` without diffing a
 /// directory listing ourselves.
 ///
-/// Deliberately does *not* trust the event's flag bits (`.itemRemoved` vs.
-/// `.itemRenamed` vs. ...) to decide what happened: FSEvents can coalesce or,
-/// after a buffer overflow, drop individual events entirely. The only thing
-/// worth trusting is a fresh `stat` of the reported path at the moment the
-/// callback fires — self-correcting regardless of exactly which events did
-/// or didn't make it through.
+/// Deliberately does *not* trust the event's "what happened" flag bits
+/// (`.itemRemoved` vs. `.itemRenamed` vs. ...) to decide what happened:
+/// FSEvents can coalesce or, after a buffer overflow, drop individual events
+/// entirely. The only thing worth trusting is a fresh `lstat` of the reported
+/// path at the moment the callback fires — self-correcting regardless of
+/// exactly which events did or didn't make it through.
+///
+/// The one class of flag it *does* read is the "I couldn't describe this
+/// precisely" family — `MustScanSubDirs`, `RootChanged` — which isn't a claim
+/// about a path so much as an instruction to go and look. Those surface as
+/// `PathChange.needsSubtreeRescan`.
+///
+/// None of that makes the stream complete, and callers must not assume it is:
+/// events have been measured going missing with no flag set at all. See
+/// `SubtreeResync`, which is what actually reconciles the tree with disk.
 private let log = Logger(subsystem: "com.FlyMedia.AppleTree", category: "ExternalChangeWatcher")
 
 public final class ExternalChangeWatcher: @unchecked Sendable {
     public struct PathChange: Sendable {
         public let path: String
         public let stillExists: Bool
+        /// FSEvents told us it couldn't describe this path's subtree
+        /// precisely — it coalesced events, or the kernel/user event queue
+        /// overflowed and events were discarded
+        /// (`kFSEventStreamEventFlagMustScanSubDirs`, and the root-moved case
+        /// `kFSEventStreamEventFlagRootChanged`). The documented contract is
+        /// that the client must go and look for itself, which is what
+        /// `SubtreeResync` is for.
+        ///
+        /// Worth knowing: this being `false` is *not* a promise that the
+        /// batch is complete. See `SubtreeResync`'s doc comment for measured
+        /// cases of events going missing with no flag set at all — which is
+        /// why the app reconciles after every burst rather than only when
+        /// this is set.
+        public internal(set) var needsSubtreeRescan: Bool
     }
 
     /// `handleEvents` runs on `watchQueue` (an FSEventStream callback,
@@ -91,10 +114,10 @@ public final class ExternalChangeWatcher: @unchecked Sendable {
             copyDescription: nil
         )
 
-        let callback: FSEventStreamCallback = { _, clientCallBackInfo, numEvents, eventPaths, _, _ in
+        let callback: FSEventStreamCallback = { _, clientCallBackInfo, numEvents, eventPaths, eventFlags, _ in
             guard let clientCallBackInfo else { return }
             let watcher = Unmanaged<ExternalChangeWatcher>.fromOpaque(clientCallBackInfo).takeUnretainedValue()
-            watcher.handleEvents(eventPaths: eventPaths)
+            watcher.handleEvents(numEvents: numEvents, eventPaths: eventPaths, eventFlags: eventFlags)
         }
 
         guard let stream = FSEventStreamCreate(
@@ -125,34 +148,60 @@ public final class ExternalChangeWatcher: @unchecked Sendable {
 
     /// Runs on `watchQueue` — off the main actor, since it does one `stat`
     /// per changed path.
-    private func handleEvents(eventPaths: UnsafeMutableRawPointer) {
+    private func handleEvents(
+        numEvents: Int,
+        eventPaths: UnsafeMutableRawPointer,
+        eventFlags: UnsafePointer<FSEventStreamEventFlags>
+    ) {
         guard let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] else { return }
-        // One check per *distinct* path. FSEvents routinely reports the same
-        // path several times in a single callback (a write, a rename and an
-        // attribute change on one file all coalesce into the same batch), and
-        // a bulk delete makes a batch thousands of paths long — deduplicating
-        // here saves both the syscalls and the downstream per-path work, and
-        // the answer for a repeated path is identical anyway since every one
-        // of them would be checked at the same moment.
-        var seen = Set<String>(minimumCapacity: paths.count)
+        // `numEvents` is FSEvents' own count for all three parallel arrays;
+        // clamping to what the bridged path array actually produced keeps a
+        // disagreement between them from reading past the flags buffer.
+        let flags = UnsafeBufferPointer(start: eventFlags, count: min(numEvents, paths.count))
+
+        // One existence check per *distinct* path. FSEvents routinely reports
+        // the same path several times in a single callback (a write, a rename
+        // and an attribute change on one file all coalesce into the same
+        // batch), and a bulk delete makes a batch thousands of paths long —
+        // deduplicating here saves both the syscalls and the downstream
+        // per-path work, and the answer for a repeated path is identical
+        // anyway since every one of them would be checked at the same moment.
+        // Flags, though, are OR-ed across the duplicates rather than taken
+        // from whichever copy happened to come first: a rescan demand on any
+        // one of them is a rescan demand for the path.
+        var indexByPath = [String: Int](minimumCapacity: paths.count)
         var changes: [PathChange] = []
         changes.reserveCapacity(paths.count)
-        for path in paths where seen.insert(path).inserted {
-            changes.append(PathChange(path: path, stillExists: Self.pathExists(path)))
+
+        for (offset, path) in paths.enumerated() {
+            let rescan = offset < flags.count && Self.demandsSubtreeRescan(flags[offset])
+            if let existing = indexByPath[path] {
+                if rescan { changes[existing].needsSubtreeRescan = true }
+                continue
+            }
+            indexByPath[path] = changes.count
+            changes.append(PathChange(
+                path: path,
+                stillExists: FileSystemProbe.exists(atPath: path),
+                needsSubtreeRescan: rescan
+            ))
         }
+
         guard !changes.isEmpty else { return }
         state.withLock { $0.continuation }?.yield(changes)
     }
 
-    /// `lstat` rather than `FileManager.fileExists(atPath:)`: cheaper (no
-    /// `FileManager` bookkeeping or path bridging per call, which matters at
-    /// thousands of calls per batch), and more accurate for the question
-    /// actually being asked. `fileExists` follows symlinks, so a symlink
-    /// whose *target* was deleted would be reported as gone even though the
-    /// directory entry the scan recorded — and sized — is still on disk.
-    private static func pathExists(_ path: String) -> Bool {
-        var info = stat()
-        return lstat(path, &info) == 0
+    /// Whether FSEvents is telling us this path's subtree has to be inspected
+    /// directly rather than trusted to the event stream. `MustScanSubDirs` is
+    /// the coalesced/dropped case (the `UserDropped`/`KernelDropped` bits
+    /// accompany it to say *where* it overflowed, which changes nothing about
+    /// the response). `RootChanged` means the watched root itself was moved
+    /// or replaced, so nothing below it can be taken on trust either.
+    private static func demandsSubtreeRescan(_ flags: FSEventStreamEventFlags) -> Bool {
+        let demanding = FSEventStreamEventFlags(
+            kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged
+        )
+        return flags & demanding != 0
     }
 
     public func stop() {

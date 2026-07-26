@@ -16,9 +16,10 @@ struct ExternalChangeWatcherTests {
             .appendingPathComponent("appletree-watcher-test-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: unresolved, withIntermediateDirectories: true)
 
-        var buffer = [Int8](repeating: 0, count: Int(PATH_MAX))
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
         guard realpath(unresolved.path, &buffer) != nil else { return unresolved }
-        return URL(fileURLWithPath: String(cString: buffer), isDirectory: true)
+        let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        return URL(fileURLWithPath: String(decoding: bytes, as: UTF8.self), isDirectory: true)
     }
 
     /// Races "the stream reports a change at `path` satisfying `matching`"

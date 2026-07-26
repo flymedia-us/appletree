@@ -95,6 +95,13 @@ public struct ExternalChangeApplier {
 
     // MARK: Resolution
 
+    /// Resolves a watched path to its node through the same caches `apply`
+    /// uses. Exposed for the resync path, which needs the *node* for a path
+    /// FSEvents flagged so it can survey the subtree beneath it.
+    public mutating func resolve(_ path: String) -> FileNode? {
+        node(atPath: path)
+    }
+
     private mutating func node(atPath path: String) -> FileNode? {
         if path == rootPath { return root }
         guard let separator = path.lastIndex(of: "/") else { return nil }

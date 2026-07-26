@@ -92,26 +92,33 @@ struct BulkExternalDeleteTests {
 
         #expect(batches > 0, "the watch reported nothing at all — FSEvents never delivered")
 
-        // Deliberately *not* asserting the tree ends up exactly empty, and
-        // not asserting the `bulk` directory's own node gets flagged.
-        // FSEvents genuinely doesn't promise either: it coalesces, and it
-        // drops individual events outright under load — see
-        // `ExternalChangeWatcher`'s doc comment. Observed across runs of this
-        // very test: one run reported all 3,000 files plus the directory,
-        // the next reported 2,989 files and never mentioned the directory at
-        // all. Asserting completeness would be asserting a property of the
-        // OS that isn't true, and would flake. What the app *does* promise is
-        // that whatever arrives is applied correctly and cheaply, which is
-        // what's checked here (a rescan is what reconciles the remainder).
-        #expect(rootNode.fileCount < fileCount / 2, "most of the delete should have been applied")
-        #expect(rootNode.displaySize < sizeAfterScan)
-        #expect(rootNode.displaySize > 0, "keep.bin was never deleted and must still count")
+        // The event stream on its own does NOT reliably get the tree all the
+        // way there, which is the whole reason `SubtreeResync` exists. Runs
+        // of this very test have seen 2,917 of the 3,000 file paths arrive,
+        // and separately seen every file arrive but never the enclosing
+        // directory — with `kFSEventStreamEventFlagMustScanSubDirs` not set
+        // in either case, so the flag alone would not have saved it. Asserting
+        // exact convergence *here* would be asserting a property of FSEvents
+        // that measurement says is false.
+        #expect(rootNode.displaySize < sizeAfterScan, "the events that did arrive should have been applied")
 
-        // The actual regression guard. Before batching, 3,000 sibling
-        // deletions re-sorted and re-summed the same directory 3,000 times —
-        // tens of seconds of blocked main thread, which is what made the
-        // window unusable. The bound is loose enough not to depend on machine
-        // speed and still orders of magnitude below that.
+        // What the app actually promises: once the burst goes quiet it checks
+        // the touched directories against disk. This is the same call
+        // `AppState.resyncTouchedDirectories` makes, and after it the tree
+        // must be exactly right no matter which events FSEvents chose to skip.
+        let decisions = SubtreeResync.survey(rootNode)
+        SubtreeResync.apply(decisions)
+
+        #expect(rootNode.child(named: "bulk")?.isRemoved == true)
+        #expect(rootNode.fileCount == 1, "only keep.bin should remain")
+        #expect(rootNode.displaySize > 0, "keep.bin was never deleted and must still count")
+        #expect(rootNode.displaySize < sizeAfterScan)
+
+        // The regression guard. Before batching, 3,000 sibling deletions
+        // re-sorted and re-summed the same directory 3,000 times — tens of
+        // seconds of blocked main thread, which is what made the window
+        // unusable. The bound is loose enough not to depend on machine speed
+        // and still orders of magnitude below that.
         #expect(timeInsideApply < .seconds(2))
     }
 }

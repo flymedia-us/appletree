@@ -127,6 +127,15 @@ final class AppState {
     private var pendingExternalChanges: [String: Bool] = [:]
     private var externalChangeDrainTask: Task<Void, Never>?
 
+    /// Paths FSEvents flagged as impossible to describe precisely — see
+    /// `ExternalChangeWatcher.PathChange.needsSubtreeRescan`. Resolved to
+    /// nodes and folded into `directoriesAwaitingResync` during the drain.
+    private var pendingSubtreeRescanPaths: Set<String> = []
+
+    /// Directories to re-check against the filesystem once the current burst
+    /// of external changes goes quiet — see `resyncTouchedDirectories`.
+    private var directoriesAwaitingResync: [FileNode.ID: FileNode] = [:]
+
     /// How long to let external changes accumulate before applying them. A
     /// bulk delete arrives as a rapid run of watcher batches, and each one
     /// applied on its own re-resolves and re-sums the same few directories;
@@ -138,6 +147,16 @@ final class AppState {
     /// main thread is never held for more than one chunk's worth of work and
     /// the window keeps drawing throughout.
     private static let externalChangeChunkSize = 5_000
+
+    /// How long the watch must stay silent before the touched directories are
+    /// re-checked against disk. Long enough that a delete still in progress
+    /// doesn't trigger a survey of a subtree that's still changing; short
+    /// enough that a genuinely missed event isn't left on screen.
+    private static let externalChangeQuietPeriod = Duration.seconds(1)
+
+    /// Distinct directories to track for the resync pass before collapsing to
+    /// the scan root instead — see `noteDirectoryNeedsResync`.
+    private static let resyncDirectoryCap = 4_096
 
     /// Presents the standard folder picker and starts a scan on the chosen
     /// root. Shared by the toolbar button and File → Open Folder… so both
@@ -285,6 +304,8 @@ final class AppState {
         externalChangeDrainTask?.cancel()
         externalChangeDrainTask = nil
         pendingExternalChanges = [:]
+        pendingSubtreeRescanPaths = []
+        directoriesAwaitingResync = [:]
     }
 
     /// Merges a watcher batch into `pendingExternalChanges` and makes sure a
@@ -299,16 +320,22 @@ final class AppState {
         guard rootNode != nil else { return }
         for change in changes {
             pendingExternalChanges[change.path] = change.stillExists
+            if change.needsSubtreeRescan {
+                pendingSubtreeRescanPaths.insert(change.path)
+            }
         }
         scheduleExternalChangeDrain()
     }
 
     private func scheduleExternalChangeDrain() {
-        guard externalChangeDrainTask == nil, !pendingExternalChanges.isEmpty else { return }
+        guard externalChangeDrainTask == nil,
+              !pendingExternalChanges.isEmpty || !directoriesAwaitingResync.isEmpty else { return }
         externalChangeDrainTask = Task { [weak self] in
             try? await Task.sleep(for: Self.externalChangeCoalescingWindow)
             guard let self, !Task.isCancelled else { return }
             await self.drainPendingExternalChanges()
+            guard !Task.isCancelled else { return }
+            await self.resyncTouchedDirectories()
             // A cancellation means `stopWatchingForExternalChanges` already
             // reset this state — and may already have started a fresh watch
             // with a drain task of its own, which clearing the reference here
@@ -321,6 +348,63 @@ final class AppState {
             // costs a treemap relayout and an extension recompute.
             self.scheduleExternalChangeDrain()
         }
+    }
+
+    /// Checks the directories a burst of external changes touched against
+    /// what's actually on disk, and fixes anything the event stream failed to
+    /// tell us about.
+    ///
+    /// This exists because the watch is genuinely not reliable enough to be
+    /// the only source of truth, in a way FSEvents' own documentation doesn't
+    /// fully cover. `kFSEventStreamEventFlagMustScanSubDirs` is supposed to
+    /// announce coalescing, and it's honoured here (see
+    /// `pendingSubtreeRescanPaths`) — but measured against a real 3,000-file
+    /// delete in a watched folder, that flag was never set and events still
+    /// went missing: one run delivered 2,917 of the 3,000 paths, another
+    /// delivered the files but never the enclosing directory. Left at that,
+    /// the app would sometimes sit there reporting sizes that are simply
+    /// wrong until the user thought to rescan — the one thing a disk-usage
+    /// tool cannot do.
+    ///
+    /// Deliberately runs only once the burst has gone quiet. Reconciling
+    /// while a big delete is still in flight would just be re-walking a
+    /// subtree that's still changing, and the syscalls would compete with the
+    /// deletion itself.
+    private func resyncTouchedDirectories() async {
+        guard !directoriesAwaitingResync.isEmpty, rootNode != nil else { return }
+        try? await Task.sleep(for: Self.externalChangeQuietPeriod)
+        // More events arrived — this burst isn't over. Leave the directories
+        // queued; the drain that handles those events reconciles afterwards.
+        guard pendingExternalChanges.isEmpty, !Task.isCancelled else { return }
+
+        let directories = Array(directoriesAwaitingResync.values)
+        directoriesAwaitingResync = [:]
+
+        // Off the main actor: a wide subtree is thousands of `lstat` calls.
+        // Only the disagreements come back, so the overwhelmingly common
+        // "nothing drifted" outcome returns an empty array.
+        let decisions = await Task.detached(priority: .utility) {
+            directories.flatMap { SubtreeResync.survey($0) }
+        }.value
+
+        guard !Task.isCancelled, !decisions.isEmpty else { return }
+        if !SubtreeResync.apply(decisions).isEmpty {
+            bumpGeneration()
+        }
+    }
+
+    /// Queues `directory` for the post-burst resync pass, collapsing to the
+    /// scan root once too many distinct directories are involved. A single
+    /// survey of the root reaches everything those entries would have (it
+    /// stops at each removed directory, so it stays cheap), which is a better
+    /// trade than letting this grow with the size of the delete.
+    private func noteDirectoryNeedsResync(_ directory: FileNode) {
+        guard let rootNode else { return }
+        if directoriesAwaitingResync.count >= Self.resyncDirectoryCap {
+            directoriesAwaitingResync = [rootNode.id: rootNode]
+            return
+        }
+        directoriesAwaitingResync[directory.id] = directory
     }
 
     /// Applies pending changes in bounded chunks, yielding between them.
@@ -351,9 +435,28 @@ final class AppState {
                 }
             }
 
-            if !applier.apply(chunk).isEmpty {
+            let changed = applier.apply(chunk)
+            if !changed.isEmpty {
                 bumpGeneration()
             }
+
+            // Every directory that lost or regained a child is somewhere the
+            // event stream was demonstrably active, and so somewhere it may
+            // also have been incomplete — see `resyncTouchedDirectories`.
+            // Queue the parents, not the changed nodes themselves: a node
+            // that's already correct tells us nothing, whereas its directory
+            // is exactly the scope worth re-checking.
+            for node in changed {
+                if let parent = node.parent { noteDirectoryNeedsResync(parent) }
+            }
+            // Paths FSEvents explicitly flagged get surveyed from the flagged
+            // path itself, which for `MustScanSubDirs` is the directory whose
+            // contents it couldn't describe.
+            for path in pendingSubtreeRescanPaths {
+                if let node = applier.resolve(path) { noteDirectoryNeedsResync(node) }
+            }
+            pendingSubtreeRescanPaths.removeAll(keepingCapacity: true)
+
             if !pendingExternalChanges.isEmpty {
                 await Task.yield()
             }
