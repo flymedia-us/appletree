@@ -14,8 +14,9 @@ GitHub (GPLv3) plus a small paid Mac App Store listing of the same app.
       The current art already uses macOS geometry — an 824pt rounded-rect body
       inset in a 1024pt canvas with a drop shadow, *not* a full-bleed iOS
       square — so keep that inset if you replace it.
-- [ ] Privacy policy hosted at a public HTTPS URL (draft:
-      [`privacy-policy.md`](privacy-policy.md))
+- [x] Privacy policy hosted at a public HTTPS URL:
+      <https://apps.flymedia.us/appletree/privacy/> (source lives in
+      `flymedia-us/apps`; [`privacy-policy.md`](privacy-policy.md) is a pointer)
 - [ ] App Store Connect record created; category **Utilities**; price set
       (paid download — no In-App Purchase required for a simple paid app)
 - [ ] Review notes mention GPLv3 source availability (e.g. GitHub URL) so
@@ -23,8 +24,13 @@ GitHub (GPLv3) plus a small paid Mac App Store listing of the same app.
 
 ## App Store Connect metadata
 
-- [ ] Name, subtitle, description, keywords, support URL, marketing URL
-- [ ] Privacy policy URL
+- [ ] Name, subtitle, description, keywords. The three URL fields are live:
+      - Marketing URL — <https://apps.flymedia.us/appletree/>
+      - Support URL — <https://apps.flymedia.us/appletree/support/>
+      - Privacy Policy URL — <https://apps.flymedia.us/appletree/privacy/>
+
+      All three resolve directly with no redirect hop, which is how they must
+      stay — reviewers re-check them on every submission.
 - [ ] Age rating questionnaire (utility; no objectionable content expected)
 - [ ] Export compliance: already declared in the build settings
       (`ITSAppUsesNonExemptEncryption = NO`), so uploads should no longer stop

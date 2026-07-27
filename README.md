@@ -15,7 +15,10 @@ AppleTree scans a folder or whole volume with a parallel, native `fts(3)`-based 
 - **Free** — build from this repository (or download a release binary when published)
 - **Mac App Store** — small paid download for convenience, automatic updates, and to support development
 
-Source is licensed under the **GNU General Public License v3**. See [Known limitations](#known-limitations) and [`docs/app-store-checklist.md`](docs/app-store-checklist.md) for owner steps (signing, icon, hosted privacy URL, App Store Connect).
+Source is licensed under the **GNU General Public License v3**. See [Known limitations](#known-limitations) and [`docs/app-store-checklist.md`](docs/app-store-checklist.md) for owner steps (signing, icon, App Store Connect).
+
+Product site, support, and the privacy policy live at
+[apps.flymedia.us/appletree](https://apps.flymedia.us/appletree/).
 
 ## Features
 
@@ -35,7 +38,6 @@ Source is licensed under the **GNU General Public License v3**. See [Known limit
 
 - **App Store listing not yet live** — archive, upload, and review are owner steps; see [`docs/app-store-checklist.md`](docs/app-store-checklist.md).
 - **Provisional app icon.** [`AppIcon.appiconset`](AppleTree/Assets.xcassets/AppIcon.appiconset) uses macOS-correct geometry (inset rounded rect) but still wants final brand art before submission.
-- **Privacy policy must be hosted** — draft at [`docs/privacy-policy.md`](docs/privacy-policy.md); App Store Connect needs a public HTTPS URL.
 - **English-only UI** — no localization yet.
 - **No direct-download updater** — free builds are manual until you publish release artifacts; Mac App Store builds update through the store.
 
