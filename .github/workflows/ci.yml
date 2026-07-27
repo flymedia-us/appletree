@@ -12,7 +12,7 @@ jobs:
     # swift-tools-version 6.2, which macos-15's Swift 6.1 can't parse.
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Test AppleTreeCore
         working-directory: Packages/AppleTreeCore
@@ -26,7 +26,7 @@ jobs:
     name: App target (Release)
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The package suites above never compile AppleTree/ itself, so without
       # this the whole SwiftUI shell (AppState, ContentView, the AppKit
