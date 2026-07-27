@@ -8,12 +8,11 @@ on:
 jobs:
   test:
     name: Swift package tests
-    runs-on: macos-15
+    # macos-26's default Xcode is 26.x (Swift 6.2+); the packages declare
+    # swift-tools-version 6.2, which macos-15's Swift 6.1 can't parse.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
-
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
       - name: Test AppleTreeCore
         working-directory: Packages/AppleTreeCore
@@ -25,12 +24,9 @@ jobs:
 
   build:
     name: App target (Release)
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
-
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
       # The package suites above never compile AppleTree/ itself, so without
       # this the whole SwiftUI shell (AppState, ContentView, the AppKit
