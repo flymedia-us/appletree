@@ -19,11 +19,15 @@ DerivedData/
 WizTree_REFERENCE/
 GrandPerspective*/
 
-# App Store marketing artwork. Kept out of the repo deliberately: it is ~11 MB
-# of PNGs against a <1 MB source tree, nothing in the build reads it, and this
-# repo is public and cloned to build. Binary that might later want removing is
-# exactly what cost us a history rewrite once already — adding it later is one
-# commit, taking it back out is not. Master copies live with the other design
-# sources outside the repo; AppStoreListing.md is the text that matters and is
-# tracked.
+# App Store marketing material — screenshots, artboards, and the listing copy.
+# Deliberately not in the repo: nothing in the build reads any of it, it is
+# ~11 MB of PNG against a sub-1 MB source tree, and this repo is public and
+# cloned to build. It lives with the Photoshop sources it is exported from:
+#
+#   Google Drive (sam@flymedia.us) → My Drive/Apps/AppleTree/App Store/
+#     EXPORT/                 the artboards uploaded to App Store Connect
+#     AppStoreListing.md      name, subtitle, keywords, description, review notes
+#     Screenshots/            raw captures the artboards are built from
+#
 AppStoreScreenshots/
+AppStoreListing.md

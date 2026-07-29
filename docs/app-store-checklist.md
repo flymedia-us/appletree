@@ -31,17 +31,19 @@ GitHub (GPLv3) plus a small paid Mac App Store listing of the same app.
       it is public.
 - [ ] Review notes mention GPLv3 source availability (e.g. GitHub URL) so
       App Store GPL expectations are clear
-- [ ] **Re-shoot `AppStoreScreenshots/Artboard 1.png`.** It is a scan of the
-      owner's real boot volume, so the treemap and outline expose personal and
-      client-identifying folder names and a Google account address. Everything
-      in a screenshot is public forever. Scan `/Applications` or a purpose-made
-      folder instead, as Artboards 3 and 4 already do.
+- [x] Artboard 1 shows a scan of a real boot volume, so the treemap exposed a
+      Google account address, client-identifying folder names, and an iPhone
+      backup UDID. All are blurred as of 2026-07-29. Anything in a screenshot
+      is public permanently — scan `/Applications` or a purpose-made folder
+      from the start, as Artboards 3 and 4 do, rather than blurring afterwards.
 
 ## App Store Connect metadata
 
 - [ ] Name, subtitle, description, keywords — all written and measured against
-      Apple's limits in [`AppStoreListing.md`](../AppStoreListing.md); paste
-      from there rather than retyping. The three URL fields are live:
+      Apple's limits in `AppStoreListing.md`, which lives outside this repo
+      with the screenshots and Photoshop sources (see `.gitignore` for the
+      path). Paste from there rather than retyping. The three URL fields are
+      live:
       - Marketing URL — <https://apps.flymedia.us/appletree/>
       - Support URL — <https://apps.flymedia.us/appletree/support/>
       - Privacy Policy URL — <https://apps.flymedia.us/appletree/privacy/>
