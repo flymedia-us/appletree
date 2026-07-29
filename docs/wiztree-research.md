@@ -1,10 +1,20 @@
 # WizTree Research: Layout, Features & Scanning Technique
 
-Research notes to inform AppleTree's design. Based on the reference screenshot
-(`WizTree_REFERENCE/Tree_View.png`), WizTree's own docs/guide, third-party
-write-ups, and (historically) study of GrandPerspective's public source for
-algorithm/UI ideas — that tree is **no longer vendored** in this repository;
-AppleTree's own code is original and licensed under GPLv3.
+Research notes to inform AppleTree's design. Based on a screenshot of WizTree's
+main window, WizTree's own docs and guide, third-party write-ups, and
+(historically) study of GrandPerspective's public source for algorithm and UI
+ideas.
+
+Neither reference lives in this repository, and neither should be re-added.
+WizTree is proprietary software whose screenshots are not ours to redistribute,
+and vendoring a competing GPL project's source next to our own invites exactly
+the derivative-work argument that Fly Media's sole copyright ownership — which
+the Mac App Store listing depends on — has to be able to withstand. Both were
+purged from history before this repository was made public.
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) states the same rule for contributors.
+
+Everything below describes observed behavior in our own words. AppleTree's code
+is original and licensed under GPLv3.
 
 ## 1. UI Layout (from the reference screenshot)
 
@@ -235,9 +245,10 @@ Tree View are written from scratch, informed by `phalladar/MacDirStat`'s
 documented techniques (TaskGroup-per-subdirectory traversal, inode-based
 hardlink/clone dedup, `Canvas`-based size-gated label rendering) and by
 GrandPerspective's published treemap layout *ideas*, without importing code
-from either. **Update (2026-07-24):** the former `GrandPerspective-3_7_2/`
-reference tree was removed from the repository; AppleTree is licensed under
-GPLv3.
+from either. **Update (2026-07-29):** the former `GrandPerspective-3_7_2/`
+reference tree was purged from the repository's entire history — not merely
+deleted from the working tree — before the repository was made public.
+AppleTree is licensed under GPLv3.
 
 ## 8. Recommendations mapped to project goals
 

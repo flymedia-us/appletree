@@ -13,6 +13,17 @@ DerivedData/
 # macOS
 .DS_Store
 
-# Third-party reference material (not redistributable)
+# Third-party reference material (not redistributable). Both were vendored
+# early on and purged from history before this repo went public — see the note
+# at the top of docs/wiztree-research.md. Do not re-add either.
 WizTree_REFERENCE/
 GrandPerspective*/
+
+# App Store marketing artwork. Kept out of the repo deliberately: it is ~11 MB
+# of PNGs against a <1 MB source tree, nothing in the build reads it, and this
+# repo is public and cloned to build. Binary that might later want removing is
+# exactly what cost us a history rewrite once already — adding it later is one
+# commit, taking it back out is not. Master copies live with the other design
+# sources outside the repo; AppStoreListing.md is the text that matters and is
+# tracked.
+AppStoreScreenshots/
