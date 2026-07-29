@@ -19,12 +19,29 @@ GitHub (GPLv3) plus a small paid Mac App Store listing of the same app.
       `flymedia-us/apps`; [`privacy-policy.md`](privacy-policy.md) is a pointer)
 - [ ] App Store Connect record created; category **Utilities**; price set
       (paid download — no In-App Purchase required for a simple paid app)
+- [ ] **Make `flymedia-us/appletree` public.** A *before* step, not an after
+      one — the repo currently 404s for everyone but the owner, and three
+      things already point at it: the live marketing URL
+      (<https://apps.flymedia.us/appletree/>) carries a prominent "Build from
+      source — View on GitHub" call to action, the App Store description
+      claims the source is on GitHub, and the review notes cite it as the
+      GPLv3 source. Anyone following any of those — including a reviewer —
+      currently gets a 404 while the listing advertises free source
+      availability. Confirm `LICENSE` and `CONTRIBUTING.md` are in place once
+      it is public.
 - [ ] Review notes mention GPLv3 source availability (e.g. GitHub URL) so
       App Store GPL expectations are clear
+- [ ] **Re-shoot `AppStoreScreenshots/Artboard 1.png`.** It is a scan of the
+      owner's real boot volume, so the treemap and outline expose personal and
+      client-identifying folder names and a Google account address. Everything
+      in a screenshot is public forever. Scan `/Applications` or a purpose-made
+      folder instead, as Artboards 3 and 4 already do.
 
 ## App Store Connect metadata
 
-- [ ] Name, subtitle, description, keywords. The three URL fields are live:
+- [ ] Name, subtitle, description, keywords — all written and measured against
+      Apple's limits in [`AppStoreListing.md`](../AppStoreListing.md); paste
+      from there rather than retyping. The three URL fields are live:
       - Marketing URL — <https://apps.flymedia.us/appletree/>
       - Support URL — <https://apps.flymedia.us/appletree/support/>
       - Privacy Policy URL — <https://apps.flymedia.us/appletree/privacy/>
@@ -70,7 +87,9 @@ rather than waiting for a rejection round-trip:
 
 ## After approval
 
-- [ ] Confirm GitHub repo is public with `LICENSE` (GNU GPLv3)
+- [ ] Publish a tagged GitHub release for the reviewed commit, so the source on
+      GitHub and the binary on the store are the same version (making the repo
+      public moved up to *Before upload*)
 - [ ] Publish free release binaries (optional but matches the dual-channel model)
 - [ ] Point README Status at the live App Store link
 - [ ] Keep `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in sync for updates
