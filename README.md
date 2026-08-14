@@ -8,7 +8,7 @@ AppleTree scans a folder or whole volume with a parallel, native `fts(3)`-based 
 
 ## Status
 
-**1.0.0** — core product is ready for Mac App Store submission and public source release on GitHub.
+**1.0.0** — available on the [Mac App Store](https://apps.apple.com/us/app/appletree-scan/id6796500800?mt=12) (listed as **AppleTree Scan**) and as public source on GitHub.
 
 **Distribution** (same app either way, GrandPerspective-style):
 
@@ -37,8 +37,6 @@ Product site, support, and the privacy policy live at
 
 ## Known limitations
 
-- **App Store listing not yet live** — archive, upload, and review are owner steps tracked outside this repository.
-- **Provisional app icon.** [`AppIcon.appiconset`](AppleTree/Assets.xcassets/AppIcon.appiconset) uses macOS-correct geometry (inset rounded rect) but still wants final brand art before submission.
 - **English-only UI** — no localization yet.
 - **No direct-download updater** — free builds are manual until you publish release artifacts; Mac App Store builds update through the store.
 
