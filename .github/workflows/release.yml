@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    name: Signed notarized DMG
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Require signing secrets
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          missing=0
+          for name in DEVELOPER_ID_P12_BASE64 DEVELOPER_ID_P12_PASSWORD \
+            APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID \
+            APP_STORE_CONNECT_API_KEY
+          do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing GitHub secret: $name"
+              missing=1
+            fi
+          done
+          if [[ "$missing" -ne 0 ]]; then
+            echo "Add the secrets listed in the README under Direct download, then re-run."
+            exit 1
+          fi
+
+      - name: Import Developer ID certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          p12-password: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+
+      - name: Show signing identities
+        run: security find-identity -v -p codesigning
+
+      - name: Archive, notarize, and wrap DMG
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: scripts/package-release.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppleTree-dmg
+          path: |
+            dist/AppleTree-*.dmg
+            dist/AppleTree.dmg
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/AppleTree-*.dmg
+            dist/AppleTree.dmg
+            LICENSE
+          body: |
+            Direct-download build of AppleTree — the same app as the Mac App Store listing, signed with Developer ID and notarized.
+
+            **Install:** open the DMG and drag AppleTree into Applications.
+
+            This build does not auto-update. Mac App Store purchases update through the store.
+
+            Source and license: GPLv3. The license text is also inside the app bundle at `AppleTree.app/Contents/Resources/LICENSE`.
