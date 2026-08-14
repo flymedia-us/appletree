@@ -239,7 +239,7 @@ final class AppState {
         } else if root.startAccessingSecurityScopedResource() {
             securityScopedRootURL = root
         } else {
-            log.info("No security-scoped access for \(root.path, privacy: .public); scan may be limited to entitlement-covered paths")
+            log.info("No security-scoped access for \(root.path, privacy: .public); scan may skip folders the sandbox does not allow")
         }
 
         scanRootURL = root

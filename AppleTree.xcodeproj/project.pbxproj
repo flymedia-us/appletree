@@ -192,16 +192,14 @@
 				CODE_SIGN_ENTITLEMENTS = AppleTree/AppleTree.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = BJZSH247Q9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = AppleTree;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "AppleTree reads your Downloads folder so a scan can include its size.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Fly Media LLC";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "AppleTree reads your Photos Library so a scan of your Pictures folder or whole disk can include its size.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -223,16 +221,14 @@
 				CODE_SIGN_ENTITLEMENTS = AppleTree/AppleTree.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = BJZSH247Q9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = AppleTree;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "AppleTree reads your Downloads folder so a scan can include its size.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Fly Media LLC";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "AppleTree reads your Photos Library so a scan of your Pictures folder or whole disk can include its size.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
