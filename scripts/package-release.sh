@@ -44,11 +44,17 @@ fi
 run_xcodebuild() {
   # Extra args first so a Developer ID archive can pass authentication flags
   # without relying on bash 3.2 empty-array expansion under `set -u`.
+  # Manual style is required here: the project is Automatic for local/App
+  # Store signing, and Automatic + CODE_SIGN_IDENTITY="Developer ID
+  # Application" is the conflicting-provisioning-settings archive failure.
+  # Export still uses automatic Developer ID so -allowProvisioningUpdates
+  # can mint/refresh the sandboxed profile.
   xcodebuild "$@" \
     -project AppleTree.xcodeproj \
     -scheme AppleTree \
     -configuration Release \
     -destination 'generic/platform=macOS' \
+    CODE_SIGN_STYLE=Manual \
     CODE_SIGN_IDENTITY="Developer ID Application" \
     DEVELOPMENT_TEAM="$TEAM_ID" \
     ARCHS="arm64 x86_64" \
