@@ -39,5 +39,26 @@ jobs:
             -scheme AppleTree \
             -configuration Release \
             -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      # Unsigned on purpose: this only checks that the drag-and-drop DMG
+      # script still produces an image. Shipping builds are signed and
+      # notarized by .github/workflows/release.yml on a version tag.
+      - name: Package unsigned DMG
+        run: |
+          APP=$(find "$RUNNER_TEMP/DerivedData" -path '*/Build/Products/Release/AppleTree.app' -type d | head -n 1)
+          if [[ -z "$APP" ]]; then
+            echo "error: Release AppleTree.app not found under DerivedData" >&2
+            find "$RUNNER_TEMP/DerivedData" -name 'AppleTree.app' >&2 || true
+            exit 1
+          fi
+          scripts/package-dmg.sh "$APP" dist/AppleTree-ci-unsigned.dmg
+
+      - name: Upload unsigned DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppleTree-ci-unsigned-dmg
+          path: dist/AppleTree-ci-unsigned.dmg
+          if-no-files-found: error

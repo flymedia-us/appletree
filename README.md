@@ -12,7 +12,7 @@ AppleTree scans a folder or whole volume with a parallel, native `fts(3)`-based 
 
 **Distribution** (same app either way, GrandPerspective-style):
 
-- **Free** — build from this repository (or download a release binary when published)
+- **Free** — download a drag-and-drop DMG from [GitHub Releases](https://github.com/flymedia-us/appletree/releases), or build from this repository
 - **Mac App Store** — small paid download for convenience, automatic updates, and to support development
 
 Source is licensed under the **GNU General Public License v3**. See [Known limitations](#known-limitations) for what is not finished yet.
@@ -38,7 +38,7 @@ Product site, support, and the privacy policy live at
 ## Known limitations
 
 - **English-only UI** — no localization yet.
-- **No direct-download updater** — free builds are manual until you publish release artifacts; Mac App Store builds update through the store.
+- **No Sparkle updater** — GitHub DMGs are a manual install; Mac App Store builds update through the store.
 
 ## Project structure
 
@@ -46,6 +46,8 @@ Product site, support, and the privacy policy live at
 AppleTree/                    App target (SwiftUI shell, AppState, entitlements, PrivacyInfo.xcprivacy)
 Packages/AppleTreeCore/       Scanning engine, FileNode model, categorization, treemap layout — no UI/framework dependencies
 Packages/AppleTreeUI/         AppKit-backed views (Tree View, Treemap, Extension Summary) as SwiftUI NSViewRepresentables
+packaging/                    Developer ID export options and DMG window artwork
+scripts/                      DMG and GitHub-release packaging
 docs/                         Privacy policy pointer, design research notes
 ```
 
@@ -78,9 +80,56 @@ cd Packages/AppleTreeUI && swift test
 
 or run them from Xcode with the `AppleTreeCore`/`AppleTreeUI` schemes (⌘U).
 
-CI runs the same package tests on push/PR via [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+CI runs the same package tests on push/PR via [`.github/workflows/ci.yml`](.github/workflows/ci.yml), and also packages an unsigned DMG as a layout smoke test. That artifact is not notarized and must not be shipped.
 
 `Packages/AppleTreeCore/Sources/ScanBench` is a small CLI benchmarking harness (`swift run scanbench [path]`) for manually timing/verifying the scanner against real folders — not part of the shipping app, not covered by tests.
+
+## Direct download (GitHub Releases)
+
+Pushing a version tag (`v1.0.0`, matching `MARKETING_VERSION` in [`project.yml`](project.yml)) runs [`.github/workflows/release.yml`](.github/workflows/release.yml). That job archives a universal (`arm64` + `x86_64`) Release build, signs it with **Developer ID Application**, notarizes the app, wraps it in a drag-to-Applications DMG, notarizes the DMG, and attaches `AppleTree-<version>.dmg` plus a stable `AppleTree.dmg` to the GitHub Release.
+
+The Mac App Store binary cannot be reused here — Gatekeeper will not launch an App Store signature outside the store.
+
+### Secrets the repo needs (once)
+
+Create these on [github.com/flymedia-us/appletree/settings/secrets/actions](https://github.com/flymedia-us/appletree/settings/secrets/actions):
+
+| Secret | What it is |
+|---|---|
+| `DEVELOPER_ID_P12_BASE64` | Developer ID Application certificate, exported from Keychain as a `.p12` and base64-encoded (`base64 -i DeveloperID.p12`) |
+| `DEVELOPER_ID_P12_PASSWORD` | Password you set on that `.p12` |
+| `APP_STORE_CONNECT_API_KEY` | Full contents of the App Store Connect API `.p8` file |
+| `APP_STORE_CONNECT_KEY_ID` | Key ID shown next to that API key |
+| `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID on the App Store Connect API keys page |
+
+How to mint them, if they do not exist yet:
+
+1. [Apple Developer → Certificates](https://developer.apple.com/account/resources/certificates/list) → **Developer ID Application** for team `BJZSH247Q9`. Export it from Keychain Access as `.p12`. This is a different certificate from the Apple Development identity used for local runs and from the Apple Distribution identity used for the App Store.
+2. [App Store Connect → Integrations → Team API keys](https://appstoreconnect.apple.com/access/integrations/api) → generate a key with **Developer** or **App Manager** access. Download the `.p8` immediately (Apple only shows it once) and copy the Key ID and Issuer ID.
+
+The app stays sandboxed. A sandboxed Developer ID build needs a Developer ID provisioning profile; the release job asks Xcode to create or refresh that profile via `-allowProvisioningUpdates` and the API key.
+
+### Publishing a version
+
+After the secrets are in place and this workflow is on `main`:
+
+```sh
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+To rebuild the DMG locally (same script the workflow runs):
+
+```sh
+export APP_STORE_CONNECT_KEY_ID=...
+export APP_STORE_CONNECT_ISSUER_ID=...
+export APP_STORE_CONNECT_API_KEY_PATH=/path/to/AuthKey_XXXX.p8
+scripts/package-release.sh
+```
+
+`SKIP_NOTARIZE=1` skips notarytool for layout checks only — do not ship that DMG.
+
+Regenerate the DMG window artwork with `packaging/dmg/render-background.swift` if you change the icon layout in `packaging/dmg/settings.py`.
 
 ## License
 

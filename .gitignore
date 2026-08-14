@@ -13,6 +13,12 @@ DerivedData/
 # macOS
 .DS_Store
 
+# Packaging output (scripts write here; never commit a built app or DMG)
+dist/
+*.dmg
+*.xcarchive
+AuthKey_*.p8
+
 # Third-party reference material (not redistributable). Both were vendored
 # early on and purged from history before this repo went public — see the note
 # at the top of docs/wiztree-research.md. Do not re-add either.
