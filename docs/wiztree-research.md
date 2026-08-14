@@ -128,10 +128,13 @@ starting point that's an evolution of the classic single-threaded FTS
 approach rather than a rewrite.
 
 Two macOS-specific gotchas to design around:
-- **Full Disk Access**: modern macOS sandboxes protected folders (Mail,
-  Messages, Time Machine backups, other users' home dirs); scanning them
-  fully requires the user to grant Full Disk Access in System Settings —
-  functionally AppleTree's equivalent of WizTree's "run as admin" prompt.
+- **Full Disk Access**: a user-selected root recursively extends the App
+  Sandbox, but does not override macOS privacy controls protecting folders such
+  as Desktop, Documents, Downloads, media libraries, Mail, Messages, Time
+  Machine backups, and other users' home directories. AppleTree intentionally
+  avoids blanket folder-specific entitlements; a complete whole-volume scan
+  may therefore require Full Disk Access in System Settings — functionally its
+  equivalent of WizTree's "run as admin" prompt.
 - **APFS clones / hard links**: APFS copy-on-write clones share extents;
   naive size summation can double-count space that isn't actually
   duplicated on disk. WizTree's "Allocated" column and hardlink-aware

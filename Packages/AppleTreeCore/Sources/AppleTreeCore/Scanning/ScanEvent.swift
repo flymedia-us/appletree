@@ -23,12 +23,17 @@ import Foundation
 /// (`/System/Library/AssetsV2/*`), and Keychain database files
 /// (`~/Library/Keychains/*` — excluded from FDA's scope by Apple's own
 /// design; those need the Keychain Services API, not raw file access).
-/// Chasing each new prefix individually doesn't converge, so this
-/// classifies by an allowlist instead: the only EPERM territory Full Disk
-/// Access actually unlocks is a user's own `~/Library` (any user, since
-/// FDA's own description says "for all users on this Mac"), Keychains
-/// excepted. Everything else that returns EPERM — however it's phrased —
-/// is `.systemProtected`, structurally unfixable by any permission grant.
+/// Chasing each new system prefix individually doesn't converge, so this
+/// classifies by an allowlist instead: EPERM inside a user's privacy-protected
+/// home folders is Full Disk Access territory (any user, since FDA's own
+/// description says "for all users on this Mac"). This includes `Library`
+/// (Keychains excepted) plus Desktop, Documents, Downloads, Pictures, Music,
+/// and Movies. These matter when scanning a user-selected home folder or
+/// volume: Apple requires the app not to declare unnecessary programmatic
+/// folder-access entitlements, and mandatory privacy controls may still deny
+/// content even though the Open Panel's sandbox extension recursively covers
+/// the selected root. Everything else that returns EPERM is `.systemProtected`,
+/// structurally unfixable by FDA.
 public enum FolderSkipReason: Sendable, Equatable {
     /// Blocked by TCC privacy protection — granting Full Disk Access may
     /// resolve this on a rescan.
@@ -44,19 +49,28 @@ public enum FolderSkipReason: Sendable, Equatable {
 
     public init(errno: Int32, path: String) {
         switch errno {
-        case EPERM: self = Self.isUserLibraryPath(path) ? .tccDenied : .systemProtected
+        case EPERM: self = Self.isFullDiskAccessRelevantPath(path) ? .tccDenied : .systemProtected
         case EACCES: self = .accessDenied
         default: self = .other(errno: errno)
         }
     }
 
-    /// Matches `/Users/<anyone>/Library/...` but excludes `Keychains`
-    /// specifically — the one subfolder there FDA doesn't reach.
-    private static func isUserLibraryPath(_ path: String) -> Bool {
-        guard path.range(of: #"^/Users/[^/]+/Library/"#, options: .regularExpression) != nil else {
+    /// Matches privacy-protected folders in `/Users/<anyone>` while excluding
+    /// `~/Library/Keychains`, which FDA intentionally doesn't make readable.
+    private static func isFullDiskAccessRelevantPath(_ path: String) -> Bool {
+        let components = path.split(separator: "/", omittingEmptySubsequences: true)
+        guard components.count >= 3, components[0] == "Users" else {
             return false
         }
-        return !path.contains("/Library/Keychains/")
+
+        switch components[2] {
+        case "Desktop", "Documents", "Downloads", "Pictures", "Music", "Movies":
+            return true
+        case "Library":
+            return components.count < 4 || components[3] != "Keychains"
+        default:
+            return false
+        }
     }
 }
 

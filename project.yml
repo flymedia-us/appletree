@@ -40,6 +40,14 @@ targets:
         # Connect's export-compliance question at upload time instead of
         # stalling every single build on the manual questionnaire.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        # A broader home-folder or volume selection is not implied consent for
+        # these nested TCC-protected folders. Keep the prompt explanations even
+        # without folder-specific sandbox entitlements: the Open Panel security
+        # scope handles App Sandbox access, while these strings explain the
+        # separate Files & Folders privacy prompts.
+        INFOPLIST_KEY_NSDesktopFolderUsageDescription: "AppleTree reads your Desktop folder when it is included in a folder or volume you choose to scan."
+        INFOPLIST_KEY_NSDocumentsFolderUsageDescription: "AppleTree reads your Documents folder when it is included in a folder or volume you choose to scan."
+        INFOPLIST_KEY_NSDownloadsFolderUsageDescription: "AppleTree reads your Downloads folder when it is included in a folder or volume you choose to scan."
         CODE_SIGN_ENTITLEMENTS: AppleTree/AppleTree.entitlements
         CODE_SIGN_STYLE: Automatic
         # Must live here, not only in the generated pbxproj: `xcodegen generate`

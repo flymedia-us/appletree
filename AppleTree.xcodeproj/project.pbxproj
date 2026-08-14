@@ -199,6 +199,9 @@
 				INFOPLIST_KEY_CFBundleDisplayName = AppleTree;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "AppleTree reads your Desktop folder when it is included in a folder or volume you choose to scan.";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "AppleTree reads your Documents folder when it is included in a folder or volume you choose to scan.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "AppleTree reads your Downloads folder when it is included in a folder or volume you choose to scan.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Fly Media LLC";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -228,6 +231,9 @@
 				INFOPLIST_KEY_CFBundleDisplayName = AppleTree;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "AppleTree reads your Desktop folder when it is included in a folder or volume you choose to scan.";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "AppleTree reads your Documents folder when it is included in a folder or volume you choose to scan.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "AppleTree reads your Downloads folder when it is included in a folder or volume you choose to scan.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Fly Media LLC";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

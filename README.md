@@ -29,7 +29,8 @@ Product site, support, and the privacy policy live at
 - **Delete to Trash** — from either the Tree View's context menu or ⌘⌫, with a confirmation alert (toggleable in Settings), immediate struck-through row, and recomputed parent/treemap/extension totals (no rescan needed).
 - **Quick Look** — Space bar to preview the selected file, Finder-style.
 - **Live external-change detection** — an `FSEventStream` watch flags files deleted or moved out from under a completed scan by Finder, Terminal, or any other process.
-- **Full Disk Access awareness** — scans classify *why* a folder was skipped (TCC-gated, root-owned/system-protected, plain permission-denied, or other) and nudge for Full Disk Access only when it would actually help.
+- **Privacy-aware disk access** — the app uses only the App Sandbox and user-selected read/write entitlements. A chosen folder or volume grants recursive sandbox access; macOS may still protect folders such as Desktop, Documents, Downloads, media folders, Mail, and Messages.
+- **Full Disk Access awareness** — scans classify *why* a folder was skipped (privacy-protected, root-owned/system-protected, plain permission-denied, or other) and nudge for Full Disk Access only when it would actually help. The folder-specific Downloads, Pictures, Music, and Movies entitlements are intentionally not requested.
 - **Volume capacity readout** — Total/Used/Reserved/Free for the scanned volume, independent of the scan's own tree total.
 - **Settings** — theme (System / Light / Dark), confirm-before-delete, and Full Disk Access nudge preferences (⌘,).
 - **Open Folder** — File → Open Folder… (⌘O), toolbar button, or drag a folder onto the window.
@@ -61,6 +62,12 @@ open AppleTree.xcodeproj
 ```
 
 Build and run the **AppleTree** scheme. The project file is checked in and buildable as-is; [`project.yml`](project.yml) exists only so the project can be regenerated with [XcodeGen](https://github.com/yonaskolb/XcodeGen) after adding/removing files (`xcodegen generate`).
+
+When scanning a home folder or whole volume, macOS may separately ask for
+Desktop, Documents, or Downloads access. If other privacy-protected folders are
+skipped, AppleTree offers a link to Full Disk Access and requires a rescan after
+permission is granted. Selecting an individual folder directly normally grants
+access without Full Disk Access.
 
 ## Testing
 

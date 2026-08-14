@@ -20,5 +20,11 @@ folders you point it at. Scan results are held in memory and discarded when the
 window closes; the only thing written to disk is a handful of preferences in
 standard `UserDefaults`.
 
+The app requests only sandbox access and user-selected read/write access; it
+does not request blanket Downloads, Pictures, Music, Movies, or Photos Library
+entitlements. Choosing a folder or volume grants access to its hierarchy, but
+macOS privacy controls can still restrict nested folders. AppleTree reports
+those skips and suggests Full Disk Access only when that permission may help.
+
 See the live policy for the full text, including the sandbox entitlements and
 Full Disk Access details.
