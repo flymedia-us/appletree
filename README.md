@@ -1,6 +1,6 @@
 # AppleTree
 
-A high-speed disk space analyzer for macOS.
+A high-speed disk space analyzer for macOS, inspired by the speed of **WizTree** on Windows and the visualization style of **GrandPerspective**.
 
 Scan a folder or a whole volume and see exactly what is using space — as a sortable outline, a breakdown by file type, and an interactive treemap, all kept in sync.
 
