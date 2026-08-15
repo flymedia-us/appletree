@@ -40,15 +40,32 @@ jobs:
           fi
 
       - name: Import Developer ID certificate
+        id: certs
         uses: apple-actions/import-codesign-certs@v3
         with:
           p12-file-base64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
           p12-password: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
 
-      - name: Show signing identities
-        run: security find-identity -v -p codesigning
+      # xcodebuild archive + Developer ID + -allowProvisioningUpdates hangs
+      # on these runners (keychain ACL / portal). Unlock the temp keychain,
+      # allow Xcode's codesign to use the key without a GUI prompt, and
+      # refuse to continue if the p12 is not Developer ID Application.
+      - name: Authorize Developer ID for codesign
+        env:
+          KEYCHAIN_PASSWORD: ${{ steps.certs.outputs.keychain-password }}
+        run: |
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" signing_temp.keychain
+          security set-keychain-settings -lut 21600 signing_temp.keychain
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$KEYCHAIN_PASSWORD" signing_temp.keychain
+          security find-identity -v -p codesigning
+          if ! security find-identity -v -p codesigning | grep -q 'Developer ID Application'; then
+            echo "::error::DEVELOPER_ID_P12_BASE64 is not a Developer ID Application certificate."
+            exit 1
+          fi
 
-      - name: Archive, notarize, and wrap DMG
+      - name: Sign, notarize, and wrap DMG
+        timeout-minutes: 45
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}

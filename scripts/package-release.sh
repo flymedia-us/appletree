@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Archive, Developer ID-sign, notarize, and wrap AppleTree in a DMG.
+# Sign, notarize, and wrap AppleTree in a DMG for GitHub Releases.
+#
+# App Store builds stay on Automatic signing in the Xcode project. This script
+# never asks xcodebuild to mix that with Developer ID — that hangs or errors
+# on CI. It reuses the unsigned Release compile (same as PR CI), then codesign
+# + notarytool.
 #
 # Required environment (CI secrets or a local export):
 #   APP_STORE_CONNECT_KEY_ID
@@ -9,7 +14,7 @@
 #   APP_STORE_CONNECT_API_KEY_PATH     path to the .p8 file
 #
 # Optional:
-#   SKIP_NOTARIZE=1     skip notarytool (layout tests only; do not ship)
+#   SKIP_NOTARIZE=1     skip sign/notary (layout tests only; do not ship)
 #   OUTPUT_DIR          default: dist
 set -euo pipefail
 
@@ -19,7 +24,7 @@ cd "$ROOT"
 OUTPUT_DIR=${OUTPUT_DIR:-"$ROOT/dist"}
 SKIP_NOTARIZE=${SKIP_NOTARIZE:-0}
 TEAM_ID=BJZSH247Q9
-ARCHIVE_PATH=$OUTPUT_DIR/AppleTree.xcarchive
+DERIVED=$OUTPUT_DIR/DerivedData
 EXPORT_DIR=$OUTPUT_DIR/export
 AUTH_KEY_PATH=${APP_STORE_CONNECT_API_KEY_PATH:-}
 
@@ -41,66 +46,54 @@ if [[ "$SKIP_NOTARIZE" != "1" ]]; then
   fi
 fi
 
-run_xcodebuild() {
-  # Extra args first so a Developer ID archive can pass authentication flags
-  # without relying on bash 3.2 empty-array expansion under `set -u`.
-  # Manual style is required here: the project is Automatic for local/App
-  # Store signing, and Automatic + CODE_SIGN_IDENTITY="Developer ID
-  # Application" is the conflicting-provisioning-settings archive failure.
-  # Export still uses automatic Developer ID so -allowProvisioningUpdates
-  # can mint/refresh the sandboxed profile.
-  xcodebuild "$@" \
-    -project AppleTree.xcodeproj \
-    -scheme AppleTree \
-    -configuration Release \
-    -destination 'generic/platform=macOS' \
-    CODE_SIGN_STYLE=Manual \
-    CODE_SIGN_IDENTITY="Developer ID Application" \
-    DEVELOPMENT_TEAM="$TEAM_ID" \
-    ARCHS="arm64 x86_64" \
-    ONLY_ACTIVE_ARCH=NO
-}
+echo "==> Building unsigned Release (universal)"
+rm -rf "$DERIVED" "$EXPORT_DIR"
+mkdir -p "$EXPORT_DIR"
+xcodebuild \
+  -project AppleTree.xcodeproj \
+  -scheme AppleTree \
+  -configuration Release \
+  -destination 'generic/platform=macOS' \
+  -derivedDataPath "$DERIVED" \
+  CODE_SIGNING_ALLOWED=NO \
+  ARCHS="arm64 x86_64" \
+  ONLY_ACTIVE_ARCH=NO \
+  build
 
-echo "==> Archiving Release (universal)"
-rm -rf "$ARCHIVE_PATH" "$EXPORT_DIR"
-if [[ "$SKIP_NOTARIZE" != "1" ]]; then
-  run_xcodebuild \
-    -allowProvisioningUpdates \
-    -authenticationKeyPath "$AUTH_KEY_PATH" \
-    -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
-    -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-    -archivePath "$ARCHIVE_PATH" \
-    archive
-else
-  run_xcodebuild \
-    -archivePath "$ARCHIVE_PATH" \
-    archive
-fi
-
-echo "==> Exporting Developer ID app"
-if [[ "$SKIP_NOTARIZE" != "1" ]]; then
-  xcodebuild \
-    -exportArchive \
-    -archivePath "$ARCHIVE_PATH" \
-    -exportPath "$EXPORT_DIR" \
-    -exportOptionsPlist "$ROOT/packaging/exportOptions-developer-id.plist" \
-    -allowProvisioningUpdates \
-    -authenticationKeyPath "$AUTH_KEY_PATH" \
-    -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
-    -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
-else
-  xcodebuild \
-    -exportArchive \
-    -archivePath "$ARCHIVE_PATH" \
-    -exportPath "$EXPORT_DIR" \
-    -exportOptionsPlist "$ROOT/packaging/exportOptions-developer-id.plist"
+APP_SRC=$(find "$DERIVED" -path '*/Build/Products/Release/AppleTree.app' -type d | head -n 1)
+if [[ -z "$APP_SRC" ]]; then
+  echo "error: Release AppleTree.app not found under $DERIVED" >&2
+  find "$DERIVED" -name 'AppleTree.app' >&2 || true
+  exit 1
 fi
 
 APP=$EXPORT_DIR/AppleTree.app
-if [[ ! -d "$APP" ]]; then
-  echo "error: export did not produce AppleTree.app in $EXPORT_DIR" >&2
-  ls -la "$EXPORT_DIR" >&2 || true
-  exit 1
+rm -rf "$APP"
+ditto "$APP_SRC" "$APP"
+
+# Embed the license before signing so the DMG script does not invalidate
+# the Developer ID signature by copying files into a signed bundle.
+if [[ -f "$ROOT/LICENSE" ]]; then
+  mkdir -p "$APP/Contents/Resources"
+  cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
+fi
+
+if [[ "$SKIP_NOTARIZE" != "1" ]]; then
+  echo "==> Signing with Developer ID"
+  IDENTITY=$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/{print $2; exit}')
+  if [[ -z "$IDENTITY" ]]; then
+    echo "error: no Developer ID Application identity in the keychain" >&2
+    security find-identity -v -p codesigning >&2 || true
+    exit 1
+  fi
+  echo "identity=$IDENTITY"
+  codesign --force --timestamp --options runtime \
+    --entitlements "$ROOT/AppleTree/AppleTree.entitlements" \
+    --generate-entitlement-der \
+    --sign "$IDENTITY" \
+    "$APP"
+  codesign --verify --verbose=2 --strict "$APP"
+  codesign --display --verbose=2 --entitlements - "$APP"
 fi
 
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")

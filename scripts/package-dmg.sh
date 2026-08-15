@@ -41,8 +41,10 @@ mkdir -p "$STAGE/source"
 cp -R "$APP_SRC" "$STAGE/source/AppleTree.app"
 
 # GPLv3 requires the license to accompany the binary. Keep it inside the
-# bundle so the DMG window stays a clean drag-and-drop of the app.
-if [[ -f "$ROOT/LICENSE" ]]; then
+# bundle so the DMG window stays a clean drag-and-drop of the app. Do not
+# overwrite an already-embedded copy: that would break a Developer ID
+# signature (release builds copy LICENSE before codesign).
+if [[ -f "$ROOT/LICENSE" && ! -f "$STAGE/source/AppleTree.app/Contents/Resources/LICENSE" ]]; then
   mkdir -p "$STAGE/source/AppleTree.app/Contents/Resources"
   cp "$ROOT/LICENSE" "$STAGE/source/AppleTree.app/Contents/Resources/LICENSE"
 fi
