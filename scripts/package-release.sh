@@ -97,8 +97,7 @@ if [[ "$SKIP_NOTARIZE" != "1" ]]; then
 fi
 
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
-DMG_VERSIONED=$OUTPUT_DIR/AppleTree-${VERSION}.dmg
-DMG_STABLE=$OUTPUT_DIR/AppleTree.dmg
+DMG=$OUTPUT_DIR/AppleTree-${VERSION}.dmg
 APP_ZIP=$OUTPUT_DIR/AppleTree-${VERSION}.zip
 
 if [[ "$SKIP_NOTARIZE" != "1" ]]; then
@@ -114,20 +113,17 @@ if [[ "$SKIP_NOTARIZE" != "1" ]]; then
 fi
 
 echo "==> Building DMG"
-"$ROOT/scripts/package-dmg.sh" "$APP" "$DMG_VERSIONED"
-cp "$DMG_VERSIONED" "$DMG_STABLE"
+"$ROOT/scripts/package-dmg.sh" "$APP" "$DMG"
 
 if [[ "$SKIP_NOTARIZE" != "1" ]]; then
   echo "==> Notarizing DMG"
-  xcrun notarytool submit "$DMG_VERSIONED" \
+  xcrun notarytool submit "$DMG" \
     --key "$AUTH_KEY_PATH" \
     --key-id "$APP_STORE_CONNECT_KEY_ID" \
     --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
     --wait
-  xcrun stapler staple "$DMG_VERSIONED"
-  cp "$DMG_VERSIONED" "$DMG_STABLE"
+  xcrun stapler staple "$DMG"
 fi
 
 echo "version=$VERSION"
-echo "dmg=$DMG_VERSIONED"
-echo "dmg_stable=$DMG_STABLE"
+echo "dmg=$DMG"

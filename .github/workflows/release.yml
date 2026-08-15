@@ -76,9 +76,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AppleTree-dmg
-          path: |
-            dist/AppleTree-*.dmg
-            dist/AppleTree.dmg
+          path: dist/AppleTree-*.dmg
           if-no-files-found: error
 
       - name: Publish GitHub Release
@@ -90,7 +88,6 @@ jobs:
           generate_release_notes: true
           files: |
             dist/AppleTree-*.dmg
-            dist/AppleTree.dmg
             LICENSE
           body: |
             Direct-download build of AppleTree — the same app as the Mac App Store listing, signed with Developer ID and notarized.

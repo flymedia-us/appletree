@@ -86,7 +86,7 @@ CI runs the same package tests on push/PR via [`.github/workflows/ci.yml`](.gith
 
 ## Direct download (GitHub Releases)
 
-Pushing a version tag (`v1.0.0`, matching `MARKETING_VERSION` in [`project.yml`](project.yml)) runs [`.github/workflows/release.yml`](.github/workflows/release.yml). That job archives a universal (`arm64` + `x86_64`) Release build, signs it with **Developer ID Application**, notarizes the app, wraps it in a drag-to-Applications DMG, notarizes the DMG, and attaches `AppleTree-<version>.dmg` plus a stable `AppleTree.dmg` to the GitHub Release.
+Pushing a version tag (`v1.0.0`, matching `MARKETING_VERSION` in [`project.yml`](project.yml)) runs [`.github/workflows/release.yml`](.github/workflows/release.yml). That job archives a universal (`arm64` + `x86_64`) Release build, signs it with **Developer ID Application**, notarizes the app, wraps it in a drag-to-Applications DMG, notarizes the DMG, and attaches `AppleTree-<version>.dmg` to the GitHub Release.
 
 The Mac App Store binary cannot be reused here — Gatekeeper will not launch an App Store signature outside the store.
 
