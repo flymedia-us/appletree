@@ -62,6 +62,11 @@ Packages/AppleTreeUI/      Tree View, Treemap, and Extension Summary as SwiftUI 
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). Please open an issue before starting anything larger than a small fix.
 
+## Support and security
+
+Use GitHub Issues for ordinary bugs and feature requests. Please report
+security-sensitive problems privately according to [`SECURITY.md`](SECURITY.md).
+
 ## License
 
 Copyright © 2026 Fly Media LLC.
