@@ -82,8 +82,11 @@ approval. No App Store upload or submission is performed by this workflow.
 
 The separate **App Store preparation** workflow uses the existing App Store
 Connect API secrets to inspect metadata, screenshots, builds, and available
-distribution certificates. It can only run from main. Its initial snapshot
-does not submit a version for review or change the live listing.
+distribution certificates. It can only run from main. The default `snapshot`
+operation changes no metadata. The `upload` operation first requires passing
+CI for the exact source commit, archives with the stable hosted Xcode, and
+uses Xcode's automatic App Store signing and upload. It never adds a version
+for review, submits it, or changes the live listing.
 
 `docs/app-store-listing.json` contains the 1.1.0 listing draft and name variants,
 all within Apple's 30-character name limit. Preserve the existing screenshots,

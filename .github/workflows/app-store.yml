@@ -2,9 +2,19 @@ name: App Store preparation
 
 on:
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Inspect state, or upload a build without submitting for review
+        required: true
+        default: snapshot
+        type: choice
+        options:
+          - snapshot
+          - upload
 
 permissions:
   contents: read
+  checks: read
 
 concurrency:
   group: app-store-preparation
@@ -31,3 +41,70 @@ jobs:
           path: ${{ runner.temp }}/app-store-state.json
           retention-days: 3
           if-no-files-found: error
+
+  upload:
+    name: Upload App Store build without submission
+    if: github.ref == 'refs/heads/main' && inputs.operation == 'upload'
+    needs: snapshot
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Require passing CI for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?per_page=100" > "$RUNNER_TEMP/checks.json"
+          python3 - "$RUNNER_TEMP/checks.json" <<'PY'
+          import json, sys
+          checks = json.load(open(sys.argv[1]))['check_runs']
+          for name in ['Swift package tests', 'App target (Release)', 'macOS 15 (Intel)']:
+              check = next((item for item in checks if item['name'] == name), None)
+              if not check or check['conclusion'] != 'success' or check['app']['id'] != 15368:
+                  raise SystemExit(f'Required CI check is not successful: {name}')
+          print('All required CI checks passed for this commit.')
+          PY
+      - name: Archive universal app
+        run: |
+          xcodebuild \
+            -project AppleTree.xcodeproj \
+            -scheme AppleTree \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath "$RUNNER_TEMP/AppleTree.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+            archive
+      - name: Sign and upload to App Store Connect
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          KEY="$RUNNER_TEMP/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          (umask 077; printf '%s\n' "$APP_STORE_CONNECT_API_KEY" > "$KEY")
+          trap 'rm -f "$KEY"' EXIT
+          python3 - "$RUNNER_TEMP/AppStoreExport.plist" <<'PY'
+          import plistlib, sys
+          options = {
+              'method': 'app-store-connect',
+              'destination': 'upload',
+              'signingStyle': 'automatic',
+              'teamID': 'BJZSH247Q9',
+              'manageAppVersionAndBuildNumber': False,
+              'uploadSymbols': True,
+              'stripSwiftSymbols': True,
+          }
+          with open(sys.argv[1], 'wb') as output:
+              plistlib.dump(options, output)
+          PY
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/AppleTree.xcarchive" \
+            -exportPath "$RUNNER_TEMP/AppStoreExport" \
+            -exportOptionsPlist "$RUNNER_TEMP/AppStoreExport.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+          # This uploads only. Review submission and release are never invoked.
