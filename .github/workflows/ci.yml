@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Swift package tests
@@ -22,6 +25,16 @@ jobs:
         working-directory: Packages/AppleTreeUI
         run: swift test
 
+      - name: Test app scan lifecycle
+        run: |
+          xcodebuild \
+            -project AppleTree.xcodeproj \
+            -scheme AppleTree \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/AppTests" \
+            CODE_SIGNING_ALLOWED=NO \
+            test
+
   build:
     name: App target (Release)
     runs-on: macos-26
@@ -38,9 +51,11 @@ jobs:
             -project AppleTree.xcodeproj \
             -scheme AppleTree \
             -configuration Release \
-            -destination 'platform=macOS' \
+            -destination 'generic/platform=macOS' \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
+            ARCHS="arm64 x86_64" \
+            ONLY_ACTIVE_ARCH=NO \
             build
 
       # Unsigned on purpose: this only checks that the drag-and-drop DMG

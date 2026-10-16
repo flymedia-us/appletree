@@ -36,8 +36,7 @@ if [[ "$SKIP_NOTARIZE" != "1" ]]; then
   if [[ -z "$AUTH_KEY_PATH" ]]; then
     : "${APP_STORE_CONNECT_API_KEY:?Set APP_STORE_CONNECT_API_KEY or APP_STORE_CONNECT_API_KEY_PATH}"
     AUTH_KEY_PATH=$OUTPUT_DIR/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
-    printf '%s\n' "$APP_STORE_CONNECT_API_KEY" > "$AUTH_KEY_PATH"
-    chmod 600 "$AUTH_KEY_PATH"
+    (umask 077; printf '%s\n' "$APP_STORE_CONNECT_API_KEY" > "$AUTH_KEY_PATH")
     trap 'rm -f "$AUTH_KEY_PATH"' EXIT
   fi
   if [[ ! -f "$AUTH_KEY_PATH" ]]; then
@@ -80,9 +79,17 @@ fi
 
 if [[ "$SKIP_NOTARIZE" != "1" ]]; then
   echo "==> Signing with Developer ID"
-  IDENTITY=$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/{print $2; exit}')
+  IDENTITIES=$(security find-identity -v -p codesigning)
+  PREFERRED_IDENTITY=120D2200993750D65F7CC0BC117EDE47DEA94AEC
+  if printf '%s\n' "$IDENTITIES" | grep -q "$PREFERRED_IDENTITY"; then
+    IDENTITY=$PREFERRED_IDENTITY
+  else
+    # Allow a renewed certificate for the same team, never another team
+    # simply because its Developer ID certificate is listed first.
+    IDENTITY=$(printf '%s\n' "$IDENTITIES" | awk -F'"' '/Developer ID Application: Fly Media LLC \(BJZSH247Q9\)/{print $2; exit}')
+  fi
   if [[ -z "$IDENTITY" ]]; then
-    echo "error: no Developer ID Application identity in the keychain" >&2
+    echo "error: no Fly Media LLC Developer ID Application identity in the keychain" >&2
     security find-identity -v -p codesigning >&2 || true
     exit 1
   fi

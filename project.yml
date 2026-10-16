@@ -62,6 +62,19 @@ targets:
       - package: AppleTreeCore
       - package: AppleTreeUI
 
+  AppleTreeTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: AppleTreeTests
+    dependencies:
+      - target: AppleTree
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+
 schemes:
   AppleTree:
     build:
@@ -71,3 +84,5 @@ schemes:
       config: Debug
     test:
       config: Debug
+      targets:
+        - AppleTreeTests

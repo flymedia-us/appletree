@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0830E3D7D81516AAF33AAF75 /* AppStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72848B334388CD2DC4600406 /* AppStateTests.swift */; };
 		2B5E6E39753B594719B44E76 /* PermissionNudgeBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8297C2C40EA996DA57BE9270 /* PermissionNudgeBanner.swift */; };
 		3D7C1298EDFCEFC75A4A015F /* AppleTreeUI in Frameworks */ = {isa = PBXBuildFile; productRef = 8CA88D95EA1A7AB039BEE662 /* AppleTreeUI */; };
 		468432D5360BBC074C85B1C6 /* AppearancePreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E13F22A595013AF78F417E4 /* AppearancePreference.swift */; };
@@ -20,6 +21,16 @@
 		F5AA156DA4B51B790F0E8B91 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 06AF0644AD79CD3FD6BE8B01 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		96BA9B0A39FCF46D9FF4AF37 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 65060EE47D1D482EEC0B7721 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A2F2EFBCF6169B417286D7A9;
+			remoteInfo = AppleTree;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		06AF0644AD79CD3FD6BE8B01 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		088A089B7D97B3BF3BFE294D /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
@@ -27,8 +38,10 @@
 		2A4AB39FB11A39F50AA63ADE /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		3B14A61C1EDE2B3A32B6F631 /* AppleTreeUI */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AppleTreeUI; path = Packages/AppleTreeUI; sourceTree = SOURCE_ROOT; };
 		5E13F22A595013AF78F417E4 /* AppearancePreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePreference.swift; sourceTree = "<group>"; };
+		72848B334388CD2DC4600406 /* AppStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateTests.swift; sourceTree = "<group>"; };
 		8297C2C40EA996DA57BE9270 /* PermissionNudgeBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionNudgeBanner.swift; sourceTree = "<group>"; };
 		88E07BDBD7281A0E02BBD15B /* AppleTree.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AppleTree.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		90D9778608B432FE3955367B /* AppleTreeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppleTreeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A8BEBC7600E4F987AAF38A32 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		BAABB5C059259123F1185DC0 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		CEC4AD5E15E88DF71F1A5E4E /* AppleTree.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppleTree.entitlements; sourceTree = "<group>"; };
@@ -49,6 +62,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		298087C49A9440CB64D9A94E /* AppleTreeTests */ = {
+			isa = PBXGroup;
+			children = (
+				72848B334388CD2DC4600406 /* AppStateTests.swift */,
+			);
+			path = AppleTreeTests;
+			sourceTree = "<group>";
+		};
 		2AA8E22FBC95F8DCA651438D /* AppleTree */ = {
 			isa = PBXGroup;
 			children = (
@@ -70,6 +91,7 @@
 			isa = PBXGroup;
 			children = (
 				2AA8E22FBC95F8DCA651438D /* AppleTree */,
+				298087C49A9440CB64D9A94E /* AppleTreeTests */,
 				A4056D57C7C6A407A9440CFC /* Packages */,
 				EA79D61DB2260D8F02C91244 /* Products */,
 			);
@@ -88,6 +110,7 @@
 			isa = PBXGroup;
 			children = (
 				88E07BDBD7281A0E02BBD15B /* AppleTree.app */,
+				90D9778608B432FE3955367B /* AppleTreeTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -115,6 +138,24 @@
 			productName = AppleTree;
 			productReference = 88E07BDBD7281A0E02BBD15B /* AppleTree.app */;
 			productType = "com.apple.product-type.application";
+		};
+		D00C2D361D011FFA612874BD /* AppleTreeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2E146977DAAE22590A7127BF /* Build configuration list for PBXNativeTarget "AppleTreeTests" */;
+			buildPhases = (
+				4C0BB113FA0633AF5EE17041 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				008B0A0713962AB545B2B83C /* PBXTargetDependency */,
+			);
+			name = AppleTreeTests;
+			packageProductDependencies = (
+			);
+			productName = AppleTreeTests;
+			productReference = 90D9778608B432FE3955367B /* AppleTreeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -150,6 +191,7 @@
 			projectRoot = "";
 			targets = (
 				A2F2EFBCF6169B417286D7A9 /* AppleTree */,
+				D00C2D361D011FFA612874BD /* AppleTreeTests */,
 			);
 		};
 /* End PBXProject section */
@@ -167,6 +209,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		4C0BB113FA0633AF5EE17041 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0830E3D7D81516AAF33AAF75 /* AppStateTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CB6ABFC93D68CAE5FC587415 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -182,6 +232,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		008B0A0713962AB545B2B83C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A2F2EFBCF6169B417286D7A9 /* AppleTree */;
+			targetProxy = 96BA9B0A39FCF46D9FF4AF37 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		30E664F230D9CC3A5E17B7E8 /* Release */ = {
@@ -248,6 +306,25 @@
 			};
 			name = Debug;
 		};
+		65FBCBEEEDEAC72614703712 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.FlyMedia.AppleTreeTests;
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AppleTree.app/Contents/MacOS/AppleTree";
+			};
+			name = Release;
+		};
 		7C9FA6EE3EC3BBCA7C161A8F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -303,6 +380,25 @@
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
+		};
+		DD624DA202A05041FF6A0DBD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.FlyMedia.AppleTreeTests;
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AppleTree.app/Contents/MacOS/AppleTree";
+			};
+			name = Debug;
 		};
 		EF99A18357ECC18C28D26C8C /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -384,6 +480,15 @@
 			buildConfigurations = (
 				EF99A18357ECC18C28D26C8C /* Debug */,
 				7C9FA6EE3EC3BBCA7C161A8F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		2E146977DAAE22590A7127BF /* Build configuration list for PBXNativeTarget "AppleTreeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DD624DA202A05041FF6A0DBD /* Debug */,
+				65FBCBEEEDEAC72614703712 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -181,7 +181,13 @@ public final class FileNode: @unchecked Sendable {
         }
         var ordered = Array(components.reversed())
         if let rootPath = root.rootPath {
-            ordered[0] = rootPath
+            // Folder-picker URLs can carry a trailing separator. Keep one
+            // canonical spelling so watcher paths and deletion results match
+            // the same nodes, including children of the volume root `/`.
+            var base = rootPath
+            while base.hasSuffix("/") { base.removeLast() }
+            ordered[0] = base
+            if ordered.count == 1 && ordered[0].isEmpty { return "/" }
         }
         return ordered.joined(separator: "/")
     }

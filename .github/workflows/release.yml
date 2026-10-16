@@ -35,7 +35,7 @@ jobs:
             fi
           done
           if [[ "$missing" -ne 0 ]]; then
-            echo "Add the secrets listed in the README under Direct download, then re-run."
+            echo "Add the secrets listed in docs/releasing.md, then re-run."
             exit 1
           fi
 

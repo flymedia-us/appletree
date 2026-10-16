@@ -31,9 +31,13 @@ public struct FileTreeView: NSViewRepresentable {
     /// to bump that counter and bring them back in sync too.
     public var onTreeMutated: (() -> Void)?
     /// When `true` (the public-release default), Delete / ⌘⌫ presents an
-    /// `NSAlert` before calling `FileManager.trashItem`.
+    /// `NSAlert` before moving ordinary items to Trash. Items already in
+    /// Trash require confirmation regardless of this preference.
     public var confirmBeforeDelete: Bool
-    /// Surfaces Trash failures to the app chrome — Delete used to fail
+    /// Opt-in setting to bypass Trash for every item. Permanent deletion
+    /// always requires confirmation, independently of `confirmBeforeDelete`.
+    public var deletePermanently: Bool
+    /// Surfaces deletion failures to the app chrome — Delete used to fail
     /// silently, leaving the row unchanged with no explanation.
     public var onDeleteFailed: ((Error) -> Void)?
     /// Resolved light/dark scheme. AppKit outline views don't reliably
@@ -47,6 +51,7 @@ public struct FileTreeView: NSViewRepresentable {
         treeVersion: Int,
         isScanning: Bool,
         confirmBeforeDelete: Bool = true,
+        deletePermanently: Bool = false,
         colorScheme: ColorScheme = .light,
         onTreeMutated: (() -> Void)? = nil,
         onDeleteFailed: ((Error) -> Void)? = nil
@@ -56,6 +61,7 @@ public struct FileTreeView: NSViewRepresentable {
         self.treeVersion = treeVersion
         self.isScanning = isScanning
         self.confirmBeforeDelete = confirmBeforeDelete
+        self.deletePermanently = deletePermanently
         self.colorScheme = colorScheme
         self.onTreeMutated = onTreeMutated
         self.onDeleteFailed = onDeleteFailed
@@ -162,6 +168,7 @@ public struct FileTreeView: NSViewRepresentable {
         coordinator.onTreeMutated = onTreeMutated
         coordinator.onDeleteFailed = onDeleteFailed
         coordinator.confirmBeforeDelete = confirmBeforeDelete
+        coordinator.deletePermanently = deletePermanently
 
         let appearanceChanged = coordinator.lastColorScheme != colorScheme
         if appearanceChanged {
@@ -283,7 +290,7 @@ public struct FileTreeView: NSViewRepresentable {
     // as a potential data race under strict concurrency — this is the
     // documented escape hatch for that exact "isolated class adopting a
     // legacy unisolated protocol" situation.
-    public final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate,
+    public final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuItemValidation,
         @preconcurrency QLPreviewPanelDataSource, @preconcurrency QLPreviewPanelDelegate {
         var rootNode: FileNode?
         var lastTreeVersion = -1
@@ -298,6 +305,7 @@ public struct FileTreeView: NSViewRepresentable {
         var onTreeMutated: (() -> Void)?
         var onDeleteFailed: ((Error) -> Void)?
         var confirmBeforeDelete = true
+        var deletePermanently = false
         private var isSyncingSelection = false
 
         private var sortKey: SortKey?
@@ -309,6 +317,7 @@ public struct FileTreeView: NSViewRepresentable {
         /// `FileNode` stays a framework-free data model. Reset whenever the
         /// root changes (a fresh scan has nothing to mark deleted).
         var deletedNodeIDs: Set<FileNode.ID> = []
+        private var deletingNodeIDs: Set<FileNode.ID> = []
 
         init(selection: SelectionModel) {
             self.selection = selection
@@ -493,11 +502,22 @@ public struct FileTreeView: NSViewRepresentable {
 
             menu.addItem(.separator())
 
-            let delete = NSMenuItem(title: "Delete", action: #selector(deleteFromContextMenu(_:)), keyEquivalent: "")
+            let delete = NSMenuItem(title: "Move to Trash", action: #selector(deleteFromContextMenu(_:)), keyEquivalent: "")
             delete.target = self
             menu.addItem(delete)
 
             return menu
+        }
+
+        public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+            guard let node = contextMenuNode() else { return false }
+            if menuItem.action == #selector(deleteFromContextMenu(_:)) {
+                menuItem.title = DeleteOperation.forItem(
+                    at: URL(fileURLWithPath: node.path), deletePermanently: deletePermanently
+                ).menuTitle
+                return canDelete(node)
+            }
+            return true
         }
 
         /// The row a contextual-menu click landed on — valid while the menu
@@ -522,7 +542,7 @@ public struct FileTreeView: NSViewRepresentable {
             NSPasteboard.general.setString(node.path, forType: .string)
         }
 
-        // MARK: Delete (move to Trash)
+        // MARK: Delete
 
         @objc private func deleteFromContextMenu(_ sender: NSMenuItem) {
             guard let node = contextMenuNode() else { return }
@@ -538,40 +558,62 @@ public struct FileTreeView: NSViewRepresentable {
         }
 
         private func delete(_ node: FileNode) {
-            guard !deletedNodeIDs.contains(node.id) else { return }
-            if confirmBeforeDelete, !confirmDelete(of: node) { return }
+            guard canDelete(node) else { return }
 
             let path = node.path
+            let url = URL(fileURLWithPath: path)
+            let operation = DeleteOperation.forItem(at: url, deletePermanently: deletePermanently)
+            if operation.requiresConfirmation(preference: confirmBeforeDelete),
+               !confirmDelete(of: node, operation: operation) { return }
+            deletingNodeIDs.insert(node.id)
             // Must hop back to the main actor for outline updates and the
-            // app-chrome error callback — Trash itself runs off-main.
+            // app-chrome error callback — filesystem work runs off-main.
             Task { @MainActor in
+                defer { deletingNodeIDs.remove(node.id) }
                 do {
-                    // `FileManager.trashItem` is a blocking syscall — usually
-                    // a fast rename, but can involve a real copy for a large
-                    // item on a different volume than the Trash, so it's run
-                    // off the main actor rather than freezing the UI for it.
-                    try await Task.detached(priority: .userInitiated) {
-                        try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil)
+                    // Both trashing and recursive removal can block for a
+                    // large folder, so keep them off the main actor.
+                    let removedURLs = try await Task.detached(priority: .userInitiated) {
+                        try operation.perform(at: url)
                     }.value
-                    markDeleted(node)
+                    applyDeletions(removedURLs, within: node)
                 } catch {
-                    // Left unmarked/un-struck-through on failure (e.g.
-                    // permission denied, already moved externally) — the row
-                    // stays as it was, and the app chrome shows why.
+                    // Emptying can fail after some entries were removed.
+                    // Reflect those successes, and leave failed entries live.
+                    if let failure = error as? DeleteOperation.Failure {
+                        applyDeletions(failure.removedURLs, within: node)
+                    }
                     onDeleteFailed?(error)
                 }
             }
         }
 
-        /// Finder-style confirmation before a destructive Trash move. Returns
+        func canDelete(_ node: FileNode) -> Bool {
+            // Wait until the scanner has finished building the tree before
+            // allowing another writer to remove nodes and recompute totals.
+            !lastIsScanning && !node.isRemovedOrHasRemovedAncestor
+                && !deletedNodeIDs.contains(node.id) && !deletingNodeIDs.contains(node.id)
+        }
+
+        /// Confirmation before deletion. Permanent deletion always asks,
+        /// even when the user has disabled ordinary Trash confirmations. Returns
         /// `true` only when the user explicitly confirms.
-        private func confirmDelete(of node: FileNode) -> Bool {
+        private func confirmDelete(of node: FileNode, operation: DeleteOperation) -> Bool {
             let alert = NSAlert()
-            alert.messageText = "Move “\(node.name)” to the Trash?"
-            alert.informativeText = Self.deleteConfirmationDetail(for: node)
+            alert.messageText = switch operation {
+            case .moveToTrash: "Move “\(node.name)” to the Trash?"
+            case .permanentlyDelete: "Permanently delete “\(node.name)”?"
+            case .emptyTrash: "Permanently empty “\(node.name)”?"
+            }
+            alert.informativeText = Self.deleteConfirmationDetail(for: node, operation: operation)
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "Move to Trash")
+            alert.addButton(withTitle: operation.buttonTitle)
             alert.addButton(withTitle: "Cancel")
+            if operation != .moveToTrash {
+                // Return defaults to Cancel for irreversible deletion.
+                alert.buttons[0].keyEquivalent = ""
+                alert.buttons[1].keyEquivalent = "\r"
+            }
             return alert.runModal() == .alertFirstButtonReturn
         }
 
@@ -580,9 +622,9 @@ public struct FileTreeView: NSViewRepresentable {
         /// remove, so the number that actually informs the decision — total
         /// size, and how many files are inside a directory — belongs in the
         /// confirmation rather than a bare "this folder will be moved."
-        private static func deleteConfirmationDetail(for node: FileNode) -> String {
+        private static func deleteConfirmationDetail(for node: FileNode, operation: DeleteOperation) -> String {
             let size = SizeFormatting.string(for: node.displaySize)
-            let restoreNote = "You can restore it from the Trash later."
+            let restoreNote = operation.recoveryNote
 
             guard node.isDirectory else {
                 return "This file is \(size). \(restoreNote)"
@@ -597,18 +639,19 @@ public struct FileTreeView: NSViewRepresentable {
             return "This folder contains \(contents), totaling \(size). \(restoreNote)"
         }
 
-        private func markDeleted(_ node: FileNode) {
-            deletedNodeIDs.insert(node.id)
-            guard let outlineView else { return }
-            // Recomputes every ancestor's size/count so the Tree View's own
-            // parent rows, the treemap, and the extension breakdown all
-            // reflect the removal immediately rather than only after a
-            // rescan — see `FileNode.markRemoved()`.
-            node.markRemoved()
-            outlineView.reloadItem(node)
-            // `reloadItem` above only repaints `node`'s own row; every
+        func applyDeletions(_ removedURLs: [URL], within node: FileNode) {
+            var applier = ExternalChangeApplier(root: node)
+            let changedNodes = applier.apply(removedURLs.map { .init(path: $0.path, stillExists: false) })
+            guard !changedNodes.isEmpty else { return }
+            deletedNodeIDs.formUnion(changedNodes.map(\.id))
+            guard let outlineView else {
+                onTreeMutated?()
+                return
+            }
+            outlineView.reloadItem(node, reloadChildren: true)
+            // `reloadItem` above repaints this subtree; every
             // ancestor's Size/% of Parent/Files/Folders cells just changed
-            // too (that's what `markRemoved()` recomputed) and need their
+            // too (the applier recomputed them) and need their
             // own repaint, or they'd keep showing pre-removal totals until
             // some unrelated reload happened to touch them.
             var ancestor = node.parent

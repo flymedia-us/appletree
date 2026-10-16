@@ -1,0 +1,28 @@
+name: Bug report
+description: Report a reproducible problem in AppleTree.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For security vulnerabilities, use [private vulnerability reporting](https://github.com/flymedia-us/appletree/security/advisories/new).
+        Do not include private file names, file contents, or credentials in public reports or screenshots.
+  - type: input
+    id: versions
+    attributes:
+      label: AppleTree and macOS versions
+      placeholder: AppleTree version/build, macOS version, Apple silicon or Intel
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the scan location type (folder, internal volume, external drive) and whether scanning had finished.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true

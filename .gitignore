@@ -25,15 +25,6 @@ AuthKey_*.p8
 WizTree_REFERENCE/
 GrandPerspective*/
 
-# App Store marketing material — screenshots, artboards, and the listing copy.
-# Deliberately not in the repo: nothing in the build reads any of it, it is
-# ~11 MB of PNG against a sub-1 MB source tree, and this repo is public and
-# cloned to build. It lives with the Photoshop sources it is exported from:
-#
-#   Google Drive (sam@flymedia.us) → My Drive/Apps/AppleTree/App Store/
-#     EXPORT/                 the artboards uploaded to App Store Connect
-#     AppStoreListing.md      name, subtitle, keywords, description, review notes
-#     Screenshots/            raw captures the artboards are built from
-#
+# Local App Store marketing exports are not required to build the app.
 AppStoreScreenshots/
 AppStoreListing.md

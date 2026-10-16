@@ -20,11 +20,11 @@ This repository is the complete source. You can read it, modify it, and build it
 
 ## Features
 
-- **Fast parallel scanning** — a worker-pool `fts(3)` traversal that stays on one device, deduplicates hardlinks, APFS clones, and firmlink-joined directories, and streams progress instead of blocking until the walk finishes
+- **Fast parallel scanning** — a worker-pool `fts(3)` traversal that stays on one device, deduplicates hardlinks and firmlink-joined directories, and streams progress instead of blocking until the walk finishes
 - **Tree View** — a sortable outline (Folder, % of Parent, Size, Logical Size, Files, Folders, Modified)
 - **Treemap** — a labeled, ordered treemap colored by file type, synced with the Tree View
 - **Extension Summary** — a whole-scan breakdown by file extension
-- **Delete to Trash** — ⌘⌫ or the context menu, with confirmation (on by default) and instant recomputed totals
+- **Delete to Trash** — ⌘⌫ or the context menu, with confirmation (on by default) and instant recomputed totals. Items already in macOS Trash folders are deleted permanently; Trash containers are emptied for the current user. Settings also offers permanent deletion for all items; permanent deletion always requires confirmation.
 - **Quick Look** — Space bar, Finder-style
 - **Live external-change detection** — files deleted or moved by other apps are flagged in a completed scan
 - **Honest skip reasons** — privacy-protected, system-owned, or permission-denied, with Full Disk Access suggested only when it would help
@@ -46,13 +46,23 @@ Scanning a home folder or whole volume may prompt for Desktop, Documents, or Dow
 ## Testing
 
 ```sh
-cd Packages/AppleTreeCore && swift test
-cd Packages/AppleTreeUI && swift test
+swift test --package-path Packages/AppleTreeCore
+swift test --package-path Packages/AppleTreeUI
+xcodebuild -project AppleTree.xcodeproj -scheme AppleTree \
+  -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
 ```
 
-Or run the `AppleTreeCore` / `AppleTreeUI` schemes in Xcode (⌘U).
+Run these from the repository root. The app tests cover cancellation, replacing a scan, error recovery, and visualization completion. You can also run the package schemes or the **AppleTree** scheme in Xcode (⌘U).
 
 `Packages/AppleTreeCore/Sources/ScanBench` is an optional CLI (`swift run scanbench [path]`) for timing scans against real folders. It is not part of the app.
+
+## Size accuracy
+
+The Size column sums each file's allocated blocks (`st_blocks`), with hardlinks counted once. APFS clones have separate inodes and can share physical blocks; AppleTree does not deduplicate those shared extents. Snapshots, filesystem metadata, inaccessible folders, and purgeable space can also make scan totals differ from the volume's Used value. A displayed size is not a promise of how much space deleting an item will free.
+
+## Release builds
+
+See [`docs/releasing.md`](docs/releasing.md) for local packaging, signing requirements, and checks before publication. CI artifacts are unsigned test builds. Pushing a `v*.*.*` tag triggers public distribution; do that only when the release is approved.
 
 ## Project structure
 

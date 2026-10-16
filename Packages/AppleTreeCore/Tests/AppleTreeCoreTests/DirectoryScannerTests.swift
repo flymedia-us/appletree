@@ -4,6 +4,37 @@ import Testing
 
 @Suite("DirectoryScanner")
 struct DirectoryScannerTests {
+    @Test("sparse files use allocated blocks and directory symlinks are not traversed")
+    func sparseFilesAndSymlinks() async throws {
+        let fixture = FileManager.default.temporaryDirectory.appendingPathComponent("appletree-sparse-\(UUID())")
+        let root = fixture.appendingPathComponent("scan")
+        let outside = fixture.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        try Data(repeating: 1, count: 16_384).write(to: outside.appendingPathComponent("do-not-follow.bin"))
+        let sparse = root.appendingPathComponent("sparse.bin")
+        try Data([1]).write(to: sparse)
+        let handle = try FileHandle(forWritingTo: sparse)
+        try handle.truncate(atOffset: 256 * 1024 * 1024)
+        try handle.close()
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("directory-link"), withDestinationURL: outside)
+
+        let scanner = DirectoryScanner()
+        var result: FileNode?
+        for try await event in await scanner.scan(root: root) {
+            if case .rootCreated(let node) = event { result = node }
+            if case .failed(let error) = event { throw error }
+        }
+        let node = try #require(result)
+        #expect(node.fileCount == 2)
+        #expect(node.folderCount == 0)
+        #expect(node.logicalSize >= 256 * 1024 * 1024)
+        #expect(node.allocatedSize < 1024 * 1024)
+        #expect(node.child(named: "directory-link")?.isDirectory == false)
+        #expect(node.child(named: "directory-link")?.hasChildren == false)
+    }
+
     /// Builds a small fixture tree:
     ///   root/file1.txt        (100 bytes)
     ///   root/hardlink.txt     (hardlink to file1.txt — same inode, must not double-count)

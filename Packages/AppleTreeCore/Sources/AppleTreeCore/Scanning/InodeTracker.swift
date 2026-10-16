@@ -1,6 +1,6 @@
 import os
 
-/// Identifies a file uniquely for hardlink/APFS-clone dedup purposes. Inode
+/// Identifies a file uniquely for hardlink dedup purposes. Inode
 /// numbers are only unique per-device, so both are needed — including on a
 /// single-volume scan, since a firmlinked directory (e.g. `/Users`) and its
 /// real backing path (`/System/Volumes/Data/Users`) share one `st_dev`
@@ -13,8 +13,9 @@ struct InodeKey: Hashable, Sendable {
 }
 
 /// Tracks which (device, inode) pairs have already been counted during a
-/// scan, so hardlinked files and APFS clones sharing the same underlying data
-/// aren't double-counted toward total size. Also used for directories — not
+/// scan, so hardlinked files aren't double-counted toward total size.
+/// APFS clones have distinct inodes; their shared extents are not deduplicated.
+/// Also used for directories — not
 /// for hardlink dedup (APFS doesn't support directory hardlinks), but
 /// because macOS composes the visible filesystem from multiple volumes
 /// joined by firmlinks (e.g. `/Users` and `/System/Volumes/Data/Users` are

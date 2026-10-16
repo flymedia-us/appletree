@@ -68,6 +68,7 @@ final class AppState {
 
     static let fdaNudgeDontAskAgainKey = "com.FlyMedia.AppleTree.fdaNudgeDismissed"
     static let confirmBeforeDeleteKey = "com.FlyMedia.AppleTree.confirmBeforeDelete"
+    static let deletePermanentlyKey = "com.FlyMedia.AppleTree.deletePermanently"
     static let appearancePreferenceKey = "com.FlyMedia.AppleTree.appearancePreference"
 
     /// Whether Delete / ⌘⌫ should ask before calling `FileManager.trashItem`.
@@ -108,6 +109,7 @@ final class AppState {
     let selection = SelectionModel()
 
     private var scanTask: Task<Void, Never>?
+    private var scanID = UUID()
     private var lastGenerationBump: ContinuousClock.Instant = .now
     private var pendingGenerationBumpTask: Task<Void, Never>?
     private static let generationBumpInterval = Duration.milliseconds(100)
@@ -205,6 +207,8 @@ final class AppState {
     }
 
     func startScan(root: URL, preAcquiredSecurityScope: Bool = false) {
+        let scanID = UUID()
+        self.scanID = scanID
         scanTask?.cancel()
         stopWatchingForExternalChanges()
         releaseSecurityScopedAccess()
@@ -245,17 +249,25 @@ final class AppState {
         scanRootURL = root
         let scanner = DirectoryScanner()
         scanTask = Task { [weak self] in
-            guard let self else { return }
+            guard let self, self.scanID == scanID else { return }
             do {
+                try Task.checkCancellation()
                 for try await event in await scanner.scan(root: root) {
+                    guard self.scanID == scanID else { return }
                     try Task.checkCancellation()
                     self.handle(event)
                 }
+                // A cancelled AsyncThrowingStream may end normally without
+                // throwing or yielding `.cancelled`, including when the user
+                // cancels before the first event arrives.
+                try Task.checkCancellation()
             } catch is CancellationError {
+                guard self.scanID == scanID else { return }
                 // Consumer cancelled before/without a `.cancelled` event —
                 // still settle UI into the cancelled state.
                 self.handleConsumerCancellation()
             } catch {
+                guard self.scanID == scanID else { return }
                 self.handle(.failed(error))
             }
         }
@@ -266,11 +278,11 @@ final class AppState {
         securityScopedRootURL = nil
     }
 
-    /// Surfaces a Trash failure in the toolbar error slot — Delete used to
+    /// Surfaces a deletion failure in the toolbar error slot — Delete used to
     /// fail silently, which is unacceptable for a destructive disk utility.
     func reportDeleteFailure(_ error: Error) {
-        log.error("Trash failed: \(error.localizedDescription, privacy: .public)")
-        errorMessage = "Couldn't move to Trash: \(error.localizedDescription)"
+        log.error("Delete failed: \(error.localizedDescription, privacy: .public)")
+        errorMessage = error.localizedDescription
     }
 
     func clearErrorMessage() {

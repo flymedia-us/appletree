@@ -5,6 +5,7 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage(AppState.appearancePreferenceKey) private var appearanceRawValue = AppearancePreference.system.rawValue
     @AppStorage(AppState.confirmBeforeDeleteKey) private var confirmBeforeDelete = true
+    @AppStorage(AppState.deletePermanentlyKey) private var deletePermanently = false
     @AppStorage(AppState.fdaNudgeDontAskAgainKey) private var fdaNudgeDismissed = false
 
     private var appearance: Binding<AppearancePreference> {
@@ -24,8 +25,18 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
             }
-            Section("Safety") {
+            Section("Deletion") {
+                Picker("Delete behavior", selection: $deletePermanently) {
+                    Text("Move to Trash (default)").tag(false)
+                    Text("Delete permanently").tag(true)
+                }
                 Toggle("Confirm before moving items to Trash", isOn: $confirmBeforeDelete)
+                    .disabled(deletePermanently)
+                Text(deletePermanently
+                     ? "All items are deleted permanently. This cannot be undone and always requires confirmation."
+                     : "Items already in Trash are deleted permanently and always require confirmation.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             Section("Permissions") {
                 Toggle("Don't ask again about Full Disk Access", isOn: $fdaNudgeDismissed)

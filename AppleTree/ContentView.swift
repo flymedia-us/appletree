@@ -14,6 +14,7 @@ struct ContentView: View {
     /// (System is resolved to the live system appearance).
     var colorScheme: ColorScheme
     @AppStorage(AppState.confirmBeforeDeleteKey) private var confirmBeforeDelete = true
+    @AppStorage(AppState.deletePermanentlyKey) private var deletePermanently = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -38,6 +39,7 @@ struct ContentView: View {
                             treeVersion: appState.scanGeneration,
                             isScanning: appState.isScanning,
                             confirmBeforeDelete: confirmBeforeDelete,
+                            deletePermanently: deletePermanently,
                             colorScheme: colorScheme,
                             onTreeMutated: appState.notifyTreeMutated,
                             onDeleteFailed: appState.reportDeleteFailure

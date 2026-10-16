@@ -81,6 +81,21 @@ struct FileNodeTests {
         #expect(a.id != b.id)
     }
 
+    @Test("directory URL trailing separators do not break child paths or external deletions", arguments: ["/scan/root/", "/"])
+    func directoryRootSeparators(path: String) {
+        let root = FileNode(name: "root", isDirectory: true, rootPath: path)
+        let child = FileNode(name: "file.txt", isDirectory: false, allocatedSize: 42, fileCount: 1)
+        root.addChild(child)
+        root.finalizeAsDirectory()
+        let normalizedRoot = path == "/" ? "/" : "/scan/root"
+        let childPath = path == "/" ? "/file.txt" : "/scan/root/file.txt"
+        #expect(root.path == normalizedRoot)
+        #expect(child.path == childPath)
+        var applier = ExternalChangeApplier(root: root)
+        #expect(applier.apply([.init(path: childPath, stillExists: false)]).count == 1)
+        #expect(root.displaySize == 0)
+    }
+
     @Test("descendant(atPath:) resolves the root itself, a nested child, and rejects unrelated/unknown paths")
     func descendantAtPath() {
         let root = FileNode(name: "root", isDirectory: true, rootPath: "/scan/root")
