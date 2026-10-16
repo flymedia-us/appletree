@@ -21,7 +21,12 @@ DerivedData/
 dist/
 *.dmg
 *.xcarchive
-AuthKey_*.p8
+*.p8
+*.p12
+*.pfx
+*.key
+*.provisionprofile
+*.mobileprovision
 
 # Third-party reference material (not redistributable). Both were vendored
 # early on and purged from history before this repo went public — see the note

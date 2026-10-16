@@ -135,6 +135,20 @@ if [[ "$SKIP_NOTARIZE" != "1" ]]; then
   xcrun stapler staple "$DMG"
   xcrun stapler validate "$DMG"
   codesign --verify --verbose=2 "$DMG"
+
+  # Verify the distributed copy, since DMG customization can modify app metadata.
+  MOUNT=$(mktemp -d "${TMPDIR:-/tmp}/appletree-verify.XXXXXX")
+  hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" "$DMG"
+  verification=0
+  codesign --verify --deep --strict --verbose=2 "$MOUNT/AppleTree.app" || verification=$?
+  xcrun stapler validate "$MOUNT/AppleTree.app" || verification=$?
+  spctl --assess --type execute --verbose=2 "$MOUNT/AppleTree.app" || verification=$?
+  hdiutil detach "$MOUNT"
+  rmdir "$MOUNT"
+  if [[ "$verification" -ne 0 ]]; then
+    echo "error: packaged application verification failed" >&2
+    exit "$verification"
+  fi
 fi
 
 (cd "$OUTPUT_DIR" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")

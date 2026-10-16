@@ -8,13 +8,15 @@ A high-speed disk space analyzer for macOS, inspired by the speed of **WizTree**
 
 Scan a folder or a whole volume and see exactly what is using space — as a sortable outline, a breakdown by file type, and an interactive treemap, all kept in sync.
 
-**[Mac App Store](https://apps.apple.com/us/app/appletree-scan/id6796500800?mt=12)** (recommended) · **[Website](https://apps.flymedia.us/appletree/)** · **GPLv3**
+**[Download 1.1.0](https://github.com/flymedia-us/appletree/releases/tag/v1.1.0)** · **[Mac App Store](https://apps.apple.com/us/app/appletree-scan/id6796500800?mt=12)** · **[Website](https://apps.flymedia.us/appletree/)** · **GPLv3**
 
 Requires macOS 15 or later. Runs on Apple silicon and Intel.
 
 ## Getting AppleTree
 
 The [Mac App Store](https://apps.apple.com/us/app/appletree-scan/id6796500800?mt=12) is the preferred way to run AppleTree (listed as **AppleTree Scan**). It updates automatically and supports continued development.
+
+The signed and notarized [GitHub download](https://github.com/flymedia-us/appletree/releases/tag/v1.1.0) is free and does not auto-update. Open the DMG and drag AppleTree into Applications. Version 1.1.0 is available there; its App Store update is still being prepared.
 
 This repository is the complete source. You can read it, modify it, and build it yourself at no cost.
 

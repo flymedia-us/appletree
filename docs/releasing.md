@@ -85,7 +85,8 @@ Connect API secrets to inspect metadata, screenshots, builds, and available
 distribution certificates. It can only run from main. The default `snapshot`
 operation changes no metadata. The `upload` operation first requires passing
 CI for the exact source commit, archives with the stable hosted Xcode, and
-uses Xcode's automatic App Store signing and upload. It never adds a version
+uses dedicated Mac App Distribution and Mac Installer Distribution identities
+with an explicit Mac App Store provisioning profile for signing and upload. It never adds a version
 for review, submits it, or changes the live listing.
 
 `docs/app-store-listing.json` contains the 1.1.0 listing draft and name variants,
@@ -93,3 +94,12 @@ all within Apple's 30-character name limit. Preserve the existing screenshots,
 pricing, availability, age rating, and review contact unless a release requires
 a specific change. Keep the version on manual release and stop before final
 review submission when the maintainer is still evaluating listing names.
+
+App Store upload additionally requires encrypted repository secrets
+`APP_STORE_DISTRIBUTION_P12_BASE64`, `APP_STORE_DISTRIBUTION_P12_PASSWORD`,
+and `APP_STORE_PROVISIONING_PROFILE_BASE64`. Repository variables
+`APP_STORE_APP_CERTIFICATE_SHA1` and `APP_STORE_INSTALLER_CERTIFICATE_SHA1`
+select the exact distribution identities. Keep private keys and provisioning
+files out of source control. Restrict repository administrator access, rotate
+credentials when a maintainer leaves, and replace certificates before expiry.
+The App Manager API key does not require broader cloud-signing permissions.

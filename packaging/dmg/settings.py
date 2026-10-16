@@ -5,7 +5,8 @@ icon = defines["icon"]
 
 files = [app]
 symlinks = {"Applications": "/Applications"}
-hide_extensions = ["AppleTree.app"]
+# Do not set hide_extensions: it adds FinderInfo after signing and breaks
+# codesign --strict verification of the app copied out of the DMG.
 
 # Window points; must stay aligned with packaging/dmg/render-background.swift.
 icon_locations = {
