@@ -108,7 +108,7 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="$APP_CERTIFICATE" DEVELOPMENT_TEAM=BJZSH247Q9 \
-            PROVISIONING_PROFILE_SPECIFIER="AppleTree Mac App Store 2026" \
+            APPLETREE_PROVISIONING_PROFILE="AppleTree Mac App Store 2026" \
             ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
             archive
       - name: Verify archive signature and sandbox

@@ -52,6 +52,9 @@ targets:
         INFOPLIST_KEY_NSDownloadsFolderUsageDescription: "AppleTree reads your Downloads folder when it is included in a folder or volume you choose to scan."
         CODE_SIGN_ENTITLEMENTS: AppleTree/AppleTree.entitlements
         CODE_SIGN_STYLE: Automatic
+        # CI can select an App Store profile for this app target without
+        # imposing that profile on local Swift package targets.
+        PROVISIONING_PROFILE_SPECIFIER: "$(APPLETREE_PROVISIONING_PROFILE)"
         # Must live here, not only in the generated pbxproj: `xcodegen generate`
         # rewrites the project from this file, so a team set by hand in Xcode
         # is silently dropped the next time anyone regenerates.
