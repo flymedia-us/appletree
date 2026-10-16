@@ -77,3 +77,16 @@ The certificate must belong to Fly Media LLC (`BJZSH247Q9`). A manual workflow
 dispatch builds a signed, notarized artifact without publishing a release;
 a version-tag push also publishes the release. Use the latter only after
 approval. No App Store upload or submission is performed by this workflow.
+
+## App Store preparation
+
+The separate **App Store preparation** workflow uses the existing App Store
+Connect API secrets to inspect metadata, screenshots, builds, and available
+distribution certificates. It can only run from main. Its initial snapshot
+does not submit a version for review or change the live listing.
+
+`docs/app-store-listing.json` contains the 1.1.0 listing draft and name variants,
+all within Apple's 30-character name limit. Preserve the existing screenshots,
+pricing, availability, age rating, and review contact unless a release requires
+a specific change. Keep the version on manual release and stop before final
+review submission when the maintainer is still evaluating listing names.

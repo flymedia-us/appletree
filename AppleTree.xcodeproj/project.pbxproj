@@ -15,6 +15,7 @@
 		53679EDE2CE60FBDE6116122 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A4AB39FB11A39F50AA63ADE /* SettingsView.swift */; };
 		9DE302CCBEBEF45BEAE183C8 /* AppleTreeCore in Frameworks */ = {isa = PBXBuildFile; productRef = CB19F02167853F2F3A5A3DDF /* AppleTreeCore */; };
 		A291A54B2F831ACE367A9519 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = BAABB5C059259123F1185DC0 /* PrivacyInfo.xcprivacy */; };
+		AF66371C0194BE2C22F023BC /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 4C679CA03787F803EEF3C308 /* LICENSE */; };
 		B0ED8A9928A0FD09F7BBD8DD /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088A089B7D97B3BF3BFE294D /* AppState.swift */; };
 		BB2CA8114737644CB42D14E3 /* WindowAppearanceApplicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC581D3EA47F1F5AAE5E7C87 /* WindowAppearanceApplicator.swift */; };
 		DB22AC9BD5C2EB1FF2C3CC75 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8BEBC7600E4F987AAF38A32 /* ContentView.swift */; };
@@ -37,6 +38,7 @@
 		0A148C1BF92057A8016494A2 /* AppleTreeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTreeApp.swift; sourceTree = "<group>"; };
 		2A4AB39FB11A39F50AA63ADE /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		3B14A61C1EDE2B3A32B6F631 /* AppleTreeUI */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AppleTreeUI; path = Packages/AppleTreeUI; sourceTree = SOURCE_ROOT; };
+		4C679CA03787F803EEF3C308 /* LICENSE */ = {isa = PBXFileReference; path = LICENSE; sourceTree = "<group>"; };
 		5E13F22A595013AF78F417E4 /* AppearancePreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePreference.swift; sourceTree = "<group>"; };
 		72848B334388CD2DC4600406 /* AppStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateTests.swift; sourceTree = "<group>"; };
 		8297C2C40EA996DA57BE9270 /* PermissionNudgeBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionNudgeBanner.swift; sourceTree = "<group>"; };
@@ -90,6 +92,7 @@
 		699FDB0E7BBBDD00E93CE255 = {
 			isa = PBXGroup;
 			children = (
+				4C679CA03787F803EEF3C308 /* LICENSE */,
 				2AA8E22FBC95F8DCA651438D /* AppleTree */,
 				298087C49A9440CB64D9A94E /* AppleTreeTests */,
 				A4056D57C7C6A407A9440CFC /* Packages */,
@@ -202,6 +205,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F5AA156DA4B51B790F0E8B91 /* Assets.xcassets in Resources */,
+				AF66371C0194BE2C22F023BC /* LICENSE in Resources */,
 				A291A54B2F831ACE367A9519 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -250,7 +254,7 @@
 				CODE_SIGN_ENTITLEMENTS = AppleTree/AppleTree.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = BJZSH247Q9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -266,7 +270,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.FlyMedia.AppleTree;
 				SDKROOT = macosx;
 				SWIFT_STRICT_CONCURRENCY = complete;
@@ -282,7 +286,7 @@
 				CODE_SIGN_ENTITLEMENTS = AppleTree/AppleTree.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = BJZSH247Q9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -298,7 +302,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.FlyMedia.AppleTree;
 				SDKROOT = macosx;
 				SWIFT_STRICT_CONCURRENCY = complete;

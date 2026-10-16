@@ -4,9 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -15,7 +20,7 @@ jobs:
     # swift-tools-version 6.2, which macos-15's Swift 6.1 can't parse.
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Test AppleTreeCore
         working-directory: Packages/AppleTreeCore
@@ -39,7 +44,7 @@ jobs:
     name: App target (Release)
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       # The package suites above never compile AppleTree/ itself, so without
       # this the whole SwiftUI shell (AppState, ContentView, the AppKit
@@ -72,8 +77,37 @@ jobs:
           scripts/package-dmg.sh "$APP" dist/AppleTree-ci-unsigned.dmg
 
       - name: Upload unsigned DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: AppleTree-ci-unsigned-dmg
           path: dist/AppleTree-ci-unsigned.dmg
           if-no-files-found: error
+
+  compatibility:
+    name: macOS 15 (Intel)
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    env:
+      # This image defaults to Swift 6.1; explicitly use the installed 6.2+
+      # toolchain while running the binaries on the oldest supported macOS.
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Verify runtime and toolchain
+        run: |
+          sw_vers
+          uname -m
+          xcodebuild -version
+      - name: Test packages on macOS 15 Intel
+        run: |
+          swift test --package-path Packages/AppleTreeCore
+          swift test --package-path Packages/AppleTreeUI
+      - name: Test app on macOS 15 Intel
+        run: |
+          xcodebuild \
+            -project AppleTree.xcodeproj \
+            -scheme AppleTree \
+            -destination 'platform=macOS,arch=x86_64' \
+            -derivedDataPath "$RUNNER_TEMP/AppTests" \
+            CODE_SIGNING_ALLOWED=NO \
+            test

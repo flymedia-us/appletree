@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-10-15
 
 - Recognize native Trash locations and empty only the current user's contents
   when selecting a shared Trash container.

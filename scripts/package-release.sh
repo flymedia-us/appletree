@@ -117,12 +117,15 @@ if [[ "$SKIP_NOTARIZE" != "1" ]]; then
     --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
     --wait
   xcrun stapler staple "$APP"
+  xcrun stapler validate "$APP"
+  spctl --assess --type execute --verbose=2 "$APP"
 fi
 
 echo "==> Building DMG"
 "$ROOT/scripts/package-dmg.sh" "$APP" "$DMG"
 
 if [[ "$SKIP_NOTARIZE" != "1" ]]; then
+  codesign --force --timestamp --sign "$IDENTITY" "$DMG"
   echo "==> Notarizing DMG"
   xcrun notarytool submit "$DMG" \
     --key "$AUTH_KEY_PATH" \
@@ -130,7 +133,11 @@ if [[ "$SKIP_NOTARIZE" != "1" ]]; then
     --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
     --wait
   xcrun stapler staple "$DMG"
+  xcrun stapler validate "$DMG"
+  codesign --verify --verbose=2 "$DMG"
 fi
+
+(cd "$OUTPUT_DIR" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
 
 echo "version=$VERSION"
 echo "dmg=$DMG"

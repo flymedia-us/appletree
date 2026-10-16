@@ -51,3 +51,15 @@ change instead of a pull request — we can implement it independently.
 Do not commit code, assets, screenshots, or reference copies of other
 applications (including competing disk analyzers) to this repository, even for
 comparison purposes. Describe the behavior in `docs/` in your own words instead.
+
+## Main branch safeguards
+
+Public contributions use pull requests with one approving owner review,
+passing package/app tests, a universal Release build, macOS 15 Intel tests,
+and resolved review conversations. New pushes dismiss stale approvals.
+Merge commits are disabled; use squash or rebase merges.
+
+Repository administrators retain an explicit exception for maintainer-authorized
+direct pushes. Maintainer automation must still inspect the diff, run relevant
+checks, and wait for CI before publishing a release. Force pushes and deletion
+of main are blocked by a separate ruleset with no bypass actors.

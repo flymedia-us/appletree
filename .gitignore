@@ -3,6 +3,10 @@
 .swiftpm/
 Package.resolved
 
+# Python release tooling
+__pycache__/
+*.pyc
+
 # Xcode
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcworkspace/xcuserdata/

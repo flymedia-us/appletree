@@ -1,0 +1,33 @@
+name: App Store preparation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-store-preparation
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    name: Inspect App Store release state
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Inspect AppleTree metadata and builds
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: python3 scripts/app-store-connect.py snapshot --output "$RUNNER_TEMP/app-store-state.json"
+      - name: Save metadata snapshot
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: app-store-state
+          path: ${{ runner.temp }}/app-store-state.json
+          retention-days: 3
+          if-no-files-found: error

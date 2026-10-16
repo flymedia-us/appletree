@@ -9,12 +9,33 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   dmg:
     name: Signed notarized DMG
     runs-on: macos-26
+    needs: checks
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify release source and version
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION=$(sed -n 's/.*MARKETING_VERSION: "\([^"]*\)"/\1/p' project.yml)
+            test "$GITHUB_REF_NAME" = "v$VERSION"
+          fi
 
       - name: Require signing secrets
         env:
@@ -41,7 +62,7 @@ jobs:
 
       - name: Import Developer ID certificate
         id: certs
-        uses: apple-actions/import-codesign-certs@v3
+        uses: apple-actions/import-codesign-certs@63fff01cd422d4b7b855d40ca1e9d34d2de9427d # v3
         with:
           p12-file-base64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
           p12-password: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
@@ -73,21 +94,24 @@ jobs:
         run: scripts/package-release.sh
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: AppleTree-dmg
-          path: dist/AppleTree-*.dmg
+          path: |
+            dist/AppleTree-*.dmg
+            dist/AppleTree-*.dmg.sha256
           if-no-files-found: error
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           draft: false
           prerelease: false
           generate_release_notes: true
           files: |
             dist/AppleTree-*.dmg
+            dist/AppleTree-*.dmg.sha256
             LICENSE
           body: |
             Direct-download build of AppleTree — the same app as the Mac App Store listing, signed with Developer ID and notarized.

@@ -7,7 +7,7 @@ Store and GitHub Releases).
 
 | Version | Supported |
 | --- | --- |
-| 1.0.x | Yes |
+| Latest published 1.x release | Yes |
 | Earlier versions | No |
 
 ## Reporting a vulnerability
