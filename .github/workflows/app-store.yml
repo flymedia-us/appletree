@@ -117,7 +117,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP"
           python3 - "$APP" <<'PYCHECK'
           import plistlib, subprocess, sys
-          result = subprocess.run(['codesign', '-d', '--entitlements', '-', sys.argv[1]],
+          result = subprocess.run(['codesign', '-d', '--entitlements', '-', '--xml', sys.argv[1]],
                                   capture_output=True, check=True)
           entitlements = plistlib.loads(result.stdout)
           assert entitlements.get('com.apple.security.app-sandbox') is True
