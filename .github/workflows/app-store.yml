@@ -95,7 +95,9 @@ jobs:
           destination.chmod(0o600)
           print('Installed App Store profile:', metadata['Name'])
           PYPROFILE
-      - name: Archive universal app
+      - name: Archive signed universal app
+        env:
+          APP_CERTIFICATE: ${{ vars.APP_STORE_APP_CERTIFICATE_SHA1 }}
         run: |
           xcodebuild \
             -project AppleTree.xcodeproj \
@@ -104,9 +106,25 @@ jobs:
             -destination 'generic/platform=macOS' \
             -archivePath "$RUNNER_TEMP/AppleTree.xcarchive" \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="$APP_CERTIFICATE" DEVELOPMENT_TEAM=BJZSH247Q9 \
+            PROVISIONING_PROFILE_SPECIFIER="AppleTree Mac App Store 2026" \
             ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
             archive
+      - name: Verify archive signature and sandbox
+        run: |
+          APP="$RUNNER_TEMP/AppleTree.xcarchive/Products/Applications/AppleTree.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          python3 - "$APP" <<'PYCHECK'
+          import plistlib, subprocess, sys
+          result = subprocess.run(['codesign', '-d', '--entitlements', '-', sys.argv[1]],
+                                  capture_output=True, check=True)
+          entitlements = plistlib.loads(result.stdout)
+          assert entitlements.get('com.apple.security.app-sandbox') is True
+          assert entitlements.get('com.apple.security.files.user-selected.read-write') is True
+          assert not entitlements.get('com.apple.security.get-task-allow', False)
+          print('Signed archive has App Sandbox and user-selected read/write access.')
+          PYCHECK
       - name: Sign and upload to App Store Connect
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}

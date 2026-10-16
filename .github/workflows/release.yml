@@ -114,7 +114,7 @@ jobs:
             dist/AppleTree-*.dmg.sha256
             LICENSE
           body: |
-            Direct-download build of AppleTree — the same app as the Mac App Store listing, signed with Developer ID and notarized.
+            Direct-download build of AppleTree (App Store availability may differ), signed with Developer ID and notarized.
 
             **Install:** open the DMG and drag AppleTree into Applications.
 

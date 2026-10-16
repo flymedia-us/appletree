@@ -84,7 +84,8 @@ The separate **App Store preparation** workflow uses the existing App Store
 Connect API secrets to inspect metadata, screenshots, builds, and available
 distribution certificates. It can only run from main. The default `snapshot`
 operation changes no metadata. The `upload` operation first requires passing
-CI for the exact source commit, archives with the stable hosted Xcode, and
+CI for the exact source commit, creates a signed archive with stable hosted Xcode,
+verifies the required sandbox entitlements before export, and
 uses dedicated Mac App Distribution and Mac Installer Distribution identities
 with an explicit Mac App Store provisioning profile for signing and upload. It never adds a version
 for review, submits it, or changes the live listing.
