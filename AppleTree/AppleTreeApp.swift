@@ -98,9 +98,9 @@ final class SystemAppearanceMonitor {
     private var observation: NSKeyValueObservation?
 
     init() {
-        // Safe pre-NSApp probe via UserDefaults; refined once `startIfNeeded`
-        // can read `NSApp.effectiveAppearance`.
-        isDark = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+        // Use the public appearance API before NSApp exists; refine the value
+        // from effectiveAppearance when the window appears.
+        isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 
     func startIfNeeded() {

@@ -1,6 +1,6 @@
 {
-  "version": "1.1.0",
-  "build": "3",
+  "version": "1.1.1",
+  "build": "4",
   "locale": "en-US",
   "draftName": "AppleTree: Scan Storage Fast",
   "alternativeNames": [
@@ -13,7 +13,7 @@
   "promotionalText": "See what is using your Mac's storage with a fast scan, a sortable file tree, a file-type breakdown, and an interactive treemap. Private and entirely on your Mac.",
   "description": "See what is using your Mac's storage. Choose a folder or volume and AppleTree scans it in parallel, showing results as a sortable file tree, a breakdown by file type, and an interactive treemap.\n\nFAST, VISUAL SCANNING\nBrowse folders by allocated size, logical size, file count, or modification date. Select a file in the tree or treemap to keep your place across views. Use Space for Quick Look and reveal files in Finder.\n\nCLEAN UP WITH CLEAR CHOICES\nMove ordinary items to Trash by default, with confirmation enabled. Items already in native Trash locations can be deleted permanently; shared Trash containers are emptied only for the current user. An optional setting enables permanent deletion for ordinary items too. Permanent deletion always requires confirmation and cannot be undone through Trash. Deletion stays unavailable while a scan is running, and successful removals update the displayed totals.\n\nHONEST SIZE AND PERMISSION INFORMATION\nHardlinks are counted once and scans stay on one device without following symlinks. AppleTree reports privacy-protected and permission-denied folders, and suggests Full Disk Access only when it may help. Allocated sizes are estimates based on file blocks: shared APFS clone extents, snapshots, filesystem metadata, and inaccessible folders can make scan totals differ from volume usage. An item's displayed size is not a promise of space freed by deletion.\n\nPRIVATE BY DESIGN\nNo account, analytics, advertising, tracking, or network functionality. Your files and scan results stay on your Mac. Preferences are stored locally.\n\nOPEN SOURCE\nAppleTree's complete source is available under GNU GPLv3 or later at https://github.com/flymedia-us/appletree. Build it yourself at no cost; the Mac App Store purchase offers convenient updates and supports development.\n\nRequires macOS 15 or later. Universal app for Apple silicon and Intel.",
   "keywords": "disk,storage,space,analyzer,treemap,files,folders,cleanup,usage,size,visual,scan",
-  "whatsNew": "New deletion controls recognize native Trash locations and add an optional permanent-delete setting. Irreversible deletion always asks for confirmation.\n\nFixed cancellation that could leave a scan stuck and corrected path handling so external deletions update totals reliably. Added safer deletion handling, clearer failures, and expanded testing on Apple silicon and Intel.",
+  "whatsNew": "New deletion controls recognize native Trash locations and add an optional permanent-delete setting. Irreversible deletion always asks for confirmation.\n\nFixed cancellation that could leave a scan stuck and corrected path handling so external deletions update totals reliably. Added safer deletion handling, clearer failures, and expanded testing on Apple silicon and Intel.\n\nCorrected the privacy manifest for displaying disk capacity and used the system appearance API for theme detection.",
   "marketingUrl": "https://apps.flymedia.us/appletree/",
   "supportUrl": "https://apps.flymedia.us/appletree/support/",
   "privacyPolicyUrl": "https://apps.flymedia.us/appletree/privacy/",

@@ -90,7 +90,7 @@ uses dedicated Mac App Distribution and Mac Installer Distribution identities
 with an explicit Mac App Store provisioning profile for signing and upload. It never adds a version
 for review, submits it, or changes the live listing.
 
-`docs/app-store-listing.json` contains the 1.1.0 listing draft and name variants,
+`docs/app-store-listing.json` contains the 1.1.1 listing draft and name variants,
 all within Apple's 30-character name limit. Preserve the existing screenshots,
 pricing, availability, age rating, and review contact unless a release requires
 a specific change. Keep the version on manual release and stop before final

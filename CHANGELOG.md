@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1 — 2026-10-16
+
+- Declare the correct privacy-manifest reason for displaying disk-space information.
+- Use the public appearance API instead of reading a system preference key.
+- Preserve and verify sandbox entitlements in App Store archives, scope the
+  provisioning profile to the app target, and validate the distributed DMG copy.
+
 ## 1.1.0 — 2026-10-15
 
 - Recognize native Trash locations and empty only the current user's contents
