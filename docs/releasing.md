@@ -78,6 +78,41 @@ dispatch builds a signed, notarized artifact without publishing a release;
 a version-tag push also publishes the release. Use the latter only after
 approval. No App Store upload or submission is performed by this workflow.
 
+## Shared Fly Media release convention
+
+AppleTree and [Neutron](https://github.com/flymedia-us/neutron/blob/main/RELEASING.md)
+use the same five Apple secret names and formats:
+
+| Secret | Format |
+| --- | --- |
+| `DEVELOPER_ID_P12_BASE64` | Base64 of a Fly Media Developer ID Application `.p12` including its private key |
+| `DEVELOPER_ID_P12_PASSWORD` | The `.p12` export password |
+| `APP_STORE_CONNECT_KEY_ID` | The team API key ID |
+| `APP_STORE_CONNECT_ISSUER_ID` | Its issuer ID |
+| `APP_STORE_CONNECT_API_KEY` | Raw `.p8` text, including its BEGIN/END lines; **not base64** |
+
+Both GitHub distribution flows use reviewed main commits, version tags, CI,
+Developer ID signing for team `BJZSH247Q9`, hardened runtime, notarization,
+stapling and artifact verification. The same company signing identity and an
+authorized team notary API key may be reused across the two repositories. Keys
+do not need to be recreated for each product. Retain the original exported
+credentials securely; GitHub does not reveal existing secret values for copying.
+
+Their update policies intentionally differ:
+
+- **AppleTree from GitHub:** signed/notarized DMG, manual downloads, no automatic
+  update check, no Sparkle dependency and no update feed. The Mac App Store
+  purchase is the preferred way to receive automatic updates and support development.
+- **AppleTree from the Mac App Store:** updates are managed by the store.
+- **Neutron from GitHub:** notarized app ZIP with Sparkle updates from its own
+  GitHub feed; it has no App Store distribution. It additionally needs its own
+  `SPARKLE_PRIVATE_KEY` secret and `SPARKLE_PUBLIC_KEY` variable.
+
+AppleTree's existing repository Apple secrets also serve its App Store workflow.
+Neutron scopes its distribution secrets to its `release` environment and does
+not need AppleTree's `APP_STORE_DISTRIBUTION_*` or provisioning-profile secrets.
+Do not add an updater to AppleTree or share Neutron's Sparkle key with it.
+
 ## App Store preparation
 
 The separate **App Store preparation** workflow uses the existing App Store
