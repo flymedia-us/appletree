@@ -20,7 +20,7 @@ jobs:
     # swift-tools-version 6.2, which macos-15's Swift 6.1 can't parse.
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Test AppleTreeCore
         working-directory: Packages/AppleTreeCore
@@ -44,7 +44,7 @@ jobs:
     name: App target (Release)
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The package suites above never compile AppleTree/ itself, so without
       # this the whole SwiftUI shell (AppState, ContentView, the AppKit
@@ -77,7 +77,7 @@ jobs:
           scripts/package-dmg.sh "$APP" dist/AppleTree-ci-unsigned.dmg
 
       - name: Upload unsigned DMG
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: AppleTree-ci-unsigned-dmg
           path: dist/AppleTree-ci-unsigned.dmg
@@ -92,7 +92,7 @@ jobs:
       # toolchain while running the binaries on the oldest supported macOS.
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Verify runtime and toolchain
         run: |
           sw_vers
